@@ -315,8 +315,8 @@ def test_plan_table_time_format():
     assert re.match(r"\d{2}:\d{2}", table[0]["Local Time"])
 
 
-def test_plan_table_interpolates_mixed_intervals():
-    """Plan table must interpolate solcast, average load, and map weather strictly by UTC timestamp."""
+def test_plan_table_extracts_rates_and_power_from_plan():
+    """Plan table must seamlessly render the FSM array variables mapping directly to the row timeline."""
     import datetime as dt
 
     start_time = dt.datetime(2025, 6, 15, 12, 0, tzinfo=dt.timezone.utc)
@@ -331,23 +331,6 @@ def test_plan_table_interpolates_mixed_intervals():
         },
     ]
 
-    # PV: Hourly block "12:00" = 6.0 kW total.
-    solar_forecast = [
-        {"period_start": start_time.isoformat(), "pv_estimate": 3.0},  # First 30 mins
-        {
-            "period_start": (start_time + dt.timedelta(minutes=30)).isoformat(),
-            "pv_estimate": 3.0,
-        },  # Second 30 mins
-    ]
-
-    # Load: 5 min blocks
-    load_forecast = [
-        {"start": start_time.isoformat(), "kw": 1.0},  # 12:00 - 12:05
-        {"start": (start_time + dt.timedelta(minutes=5)).isoformat(), "kw": 2.0},  # 12:05 - 12:10
-        {"start": (start_time + dt.timedelta(minutes=10)).isoformat(), "kw": 4.0},  # 12:10 - 12:15
-        # Avg for the 30-min row (assuming these 2 match inside it, others missing/0) = 3.0
-    ]
-
     # Weather
     weather = [
         {
@@ -360,8 +343,32 @@ def test_plan_table_interpolates_mixed_intervals():
         },  # Closest to 12:05 (30min) row? Diff to 12:05 is 35min. Diff from 15.0 to 12:05 is 15min. So 15.0 should win!
     ]
 
+    # Because `future_plan` provides the kW values directly for each row interval.
+    # We provide a mock sequence matching the rates length.
+    future_plan = [
+        {
+            "target_soc": 50.0,
+            "load": 1.0,
+            "pv": 3.0,
+            # We explicitly define export_price in future_plan as proof that the UI uses it mapping directly:
+            "import_price": 10.0,
+            "export_price": 5.0,
+            "grid_import": 0.0,
+            "state": "SELF_CONSUMPTION",
+        },
+        {
+            "target_soc": 50.0,
+            "load": 3.0,
+            "pv": 3.0,
+            "import_price": 12.0,
+            "export_price": 8.0,
+            "grid_import": 0.0,
+            "state": "IDLE",
+        },
+    ]
+
     data = _make_plan_data(
-        rates=rates, solar_forecast=solar_forecast, load_forecast=load_forecast, weather=weather
+        rates=rates, solar_forecast=[], load_forecast=[], weather=weather, future_plan=future_plan
     )
 
     table = _build_test_table(data)
@@ -373,17 +380,17 @@ def test_plan_table_interpolates_mixed_intervals():
     # Nearest neighbor to 12:05 is 11:50 (15 min difference) vs 12:40 (35 min difference).
     assert row_30m["Air Temp Forecast"] == "15.0°C"
 
-    # 2. PV Interpolation: Each 30-min block is exactly 3.0 kW.
-    # 5 min row (12:00-12:05) matches the first block. pv_kw = 3.0. Energy output = 3.0 * (5/60) = 0.25 kWh
-    # 30 min row (12:05-12:35) bridges block 1 & 2. pv_kw = 3.0. Energy output = 3.0 * (30/60) = 1.50 kWh
-    assert row_5m["PV Forecast"] == "0.25"
-    assert row_30m["PV Forecast"] == "1.50"
+    # 2. Extract PV directly from future_plan
+    assert row_5m["PV Forecast"] == "3.00"
+    assert row_30m["PV Forecast"] == "3.00"
 
-    # 3. Load Integrated Energy (kWh)
-    # 5 min row (12:00-12:05) matches only the first load block (1.0kW). Energy = 1.0 * (5/60) = 0.08 kWh
-    assert row_5m["Load Forecast"] == "0.08"
-    # 30 min row (12:05-12:35) matches the next two load blocks (2.0kW and 4.0kW). Avg = 3.0kW. Energy = 3.0 * (30/60) = 1.50 kWh
-    assert row_30m["Load Forecast"] == "1.50"
+    # 3. Extract Load directly from future_plan
+    assert row_5m["Load Forecast"] == "1.00"
+    assert row_30m["Load Forecast"] == "3.00"
+
+    # 4. Extract Rates directly from future_plan
+    assert row_5m["Export Rate"] == "5.00"
+    assert row_30m["Export Rate"] == "8.00"
 
 
 # --- API Status ---

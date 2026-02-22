@@ -153,7 +153,15 @@ class LinearBatteryController(object):
                 state = "SELF_CONSUMPTION"
 
             sequence.append(
-                {"target_soc": (step_b / capacity) * 100.0, "state": state, "grid_import": step_g}
+                {
+                    "target_soc": (step_b / capacity) * 100.0,
+                    "state": state,
+                    "grid_import": step_g * (60.0 / 5.0),
+                    "load": load_forecast[i] * (60.0 / 5.0),
+                    "pv": pv_forecast[i] * (60.0 / 5.0),
+                    "import_price": price_buy[i],
+                    "export_price": price_sell[i],
+                }
             )
 
         return b_1 / capacity, obj, dh_0, dg_0, sequence

@@ -322,24 +322,20 @@ def test_coordinator_rounded_outputs():
         assert result["soc"] == 5.6  # SOC is rounded to 1 decimal
 
 
-def test_pv_interpolation():
-    """Spec: Simulate a PV input from Solcast and check that it gets properly chopped into its 5 min rows."""
+def test_plan_table_extracts_pv_from_plan():
+    """Spec: Simulate a sequence plan from the FSM and verify the UI table renders the PV directly."""
     from datetime import datetime, timedelta, timezone
     from unittest.mock import MagicMock
 
     from custom_components.house_battery_control.coordinator import HBCDataUpdateCoordinator
 
     mock_hass = MagicMock()
-    # Need a coordinator to test its (upcoming) interpolation method
     coordinator = HBCDataUpdateCoordinator.__new__(HBCDataUpdateCoordinator)
     coordinator.hass = mock_hass
 
     now = datetime(2025, 2, 20, 12, 0, tzinfo=timezone.utc)
 
-    # 30-minute Solcast block at 6.0 kW
-    solar_forecast = [{"period_start": now.isoformat(), "pv_estimate": 6.0}]
-
-    # Six 5-minute rate intervals covering the same 30-minute period
+    # Six 5-minute rate intervals
     rates = []
     for i in range(6):
         rates.append(
@@ -351,35 +347,29 @@ def test_pv_interpolation():
             }
         )
 
-    # We will invoke the (soon to be implemented) diagnostic plan builder
-    # _build_diagnostic_plan_table(rates, solar_forecast, load_forecast, weather, current_soc, current_state)
     coordinator.fsm = MagicMock()
-    # Mock the FSM to just return an IDLE state
-    from types import SimpleNamespace
-
-    coordinator.fsm.calculate_next_state.return_value = SimpleNamespace(
-        state="IDLE", limit_kw=0.0, reason="Test"
-    )
     coordinator.capacity_kwh = 27.0
     coordinator.inverter_limit_kw = 10.0
     coordinator.config = {}
 
+    future_plan = []
+    # Mocking that the FSM calculated 6.0 kW PV average for each of the 6 blocks
+    for i in range(6):
+        future_plan.append({"pv": 6.0})
+
     table = coordinator._build_diagnostic_plan_table(
         rates=rates,
-        solar_forecast=solar_forecast,
+        solar_forecast=[],
         load_forecast=[],
         weather=[],
         current_soc=50.0,
-        future_plan=[],
+        future_plan=future_plan,
     )
 
     assert len(table) == 6
     for i, row in enumerate(table):
-        # We expect the 5-min row duration to yield average kW of 6.0,
-        # meaning energy = 6.0 kW * (5/60) h = 0.50 kWh per row.
-        # The web table expects 'PV Forecast' nicely formatted as string "0.50"
-        assert row["PV Forecast"] == "0.50", f"Row {i} failed PV interpolation"
-        # The string time should match
+        # We expect the web table to render the exact float value formatted to 2 decimals
+        assert row["PV Forecast"] == "6.00", f"Row {i} failed PV direct extraction"
         expected_time_str = (now + timedelta(minutes=5 * i)).strftime("%H:%M")
         assert row["Time"] == expected_time_str
 
@@ -440,11 +430,10 @@ async def test_coordinator_update_data_exception_recovery(mock_hass):
         assert result["state"] == "standby"
 
 
-def test_diagnostic_plan_table_energy_conversion():
+def test_plan_table_interval_cost_calculation():
     """
-    Test that the diagnostic table correctly scales instantaneous kW power
-    into integrated kWh energy for the 'Load Forecast' and 'PV Forecast' columns
-    over a 5-minute (0.0833 hr) interval.
+    Test that the diagnostic table correctly calculates interval cost using
+    the provided 'load', 'pv', and 'target_soc' over a 5-minute interval.
     """
     from datetime import timedelta
 
@@ -453,7 +442,7 @@ def test_diagnostic_plan_table_energy_conversion():
 
     coordinator = HBCDataUpdateCoordinator.__new__(HBCDataUpdateCoordinator)
     coordinator.config = {}
-    coordinator.fsm = None  # Do not run actual State Machine in table formatter
+    coordinator.fsm = None
 
     start_time = dt_util.utcnow()
 
@@ -461,39 +450,37 @@ def test_diagnostic_plan_table_energy_conversion():
         {
             "start": start_time,
             "end": start_time + timedelta(minutes=5),
-            "import_price": 0.20,
-            "export_price": 0.05,
+            "import_price": 20.0,
+            "export_price": 5.0,
         }
     ]
 
-    # 4.0 kW instantaneous Load, 2.0 kW instantaneous Solar
-    load_forecast = [{"start": start_time, "kw": 4.0}]
-    solar_forecast = [
+    # Battery starts at 50%, goes to 50% (no SOC delta).
+    # Load = 4.0 kW, PV = 2.0 kW -> Net Grid = 2.0 kW import.
+    # Energy across 5 min (0.0833 hrs) = 2.0 * 0.0833 = 0.1666 kWh.
+    # Cost at 20 c/kWh = 0.1666 * 20 / 100 = $0.0333.
+    future_plan = [
         {
-            "period_start": start_time,
-            "period_end": start_time + timedelta(minutes=5),
-            "pv_estimate": 2.0,
+            "target_soc": 50.0,
+            "load": 4.0,
+            "pv": 2.0,
+            "import_price": 20.0,
+            "export_price": 5.0,
         }
     ]
-    weather = [{"datetime": start_time, "temperature": 25.0}]
 
     table = coordinator._build_diagnostic_plan_table(
         rates=rates,
-        solar_forecast=solar_forecast,
-        load_forecast=load_forecast,
-        weather=weather,
+        solar_forecast=[],
+        load_forecast=[],
+        weather=[],
         current_soc=50.0,
-        future_plan=[],
+        future_plan=future_plan,
     )
 
     assert len(table) == 1
     row = table[0]
 
-    # 4.0 kW * (5 mins / 60) = 0.33 kWh
-    assert row["Load Forecast"] == "0.33", (
-        f"Expected '0.33', got {row['Load Forecast']} (Likely reporting raw kW)"
-    )
-    # 2.0 kW * (5 mins / 60) = 0.17 kWh
-    assert row["PV Forecast"] == "0.17", (
-        f"Expected '0.17', got {row['PV Forecast']} (Likely reporting raw kW)"
-    )
+    assert row["Load Forecast"] == "4.00"
+    assert row["PV Forecast"] == "2.00"
+    assert row["Interval Cost"] == "$0.0333"

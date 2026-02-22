@@ -206,53 +206,12 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
         cumulative = 0.0
         simulated_soc = current_soc
 
-        for rate in rates:
+        for idx, rate in enumerate(rates):
             start = rate["start"]
             end = rate.get("end", start)
 
-            # Rate metrics
-            price = rate.get("import_price", rate.get("price", 0.0))
-            export_price = rate.get("export_price", price * 0.8)
-
             duration_mins = max(1, int((end - start).total_seconds() / 60.0))
             duration_hours = duration_mins / 60.0
-
-            # --- 1. PV Interpolation ---
-            # Gather all 30-min Solar blocks that overlap this 5-min row
-            matched_solar = []
-            for s in solar_forecast:
-                s_start_raw = s.get("period_start", s.get("start", ""))
-                if not s_start_raw:
-                    continue
-                s_start = (
-                    dt_util.parse_datetime(s_start_raw)
-                    if isinstance(s_start_raw, str)
-                    else s_start_raw
-                )
-
-                from datetime import timedelta
-
-                s_end_raw = s.get("period_end", s.get("end", ""))
-                if s_end_raw:
-                    s_end = (
-                        dt_util.parse_datetime(s_end_raw)
-                        if isinstance(s_end_raw, str)
-                        else s_end_raw
-                    )
-                else:
-                    s_end = s_start + timedelta(minutes=30) if s_start else None
-
-                if s_start and s_end and (s_start < end and s_end > start):
-                    matched_solar.append(float(s.get("pv_estimate", s.get("kw", 0.0))))
-
-            pv_kw_avg = sum(matched_solar) / len(matched_solar) if matched_solar else 0.0
-            pv_kwh = pv_kw_avg * duration_hours
-
-            # --- 2. Load Interpolation ---
-            matched_loads = [
-                float(str(lf["kw"])) for lf in parsed_loads if start <= lf["start"] < end
-            ]  # type: ignore
-            load_kw_avg = sum(matched_loads) / len(matched_loads) if matched_loads else 0.0
 
             # --- 3. Weather Interpolation (Nearest Neighbor) ---
             temp_c = None
@@ -265,17 +224,28 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             # FSM Constants
             capacity = self.config.get(CONF_BATTERY_CAPACITY, 27.0)
 
-            # --- 4. Map LP Solver Plan via Time Offset ---
-            mid_time = start + (end - start) / 2
-            offset_mins = (mid_time - dt_util.utcnow()).total_seconds() / 60.0
-            idx = int(offset_mins / 5.0)
+            # --- 4. Map LP Solver Plan via Array Index ---
 
             if future_plan and 0 <= idx < len(future_plan):
                 state = future_plan[idx].get("state", "UNKNOWN")
                 target_soc = future_plan[idx].get("target_soc", simulated_soc)
+                grid_import = future_plan[idx].get("grid_import", 0.0)
+                pv_kw_avg = future_plan[idx].get("pv", 0.0)
+                load_kw_avg = future_plan[idx].get("load", 0.0)
+                price = future_plan[idx].get(
+                    "import_price", rate.get("import_price", rate.get("price", 0.0))
+                )
+                export_price = future_plan[idx].get(
+                    "export_price", rate.get("export_price", price * 0.8)
+                )
             else:
                 state = "SELF_CONSUMPTION"
                 target_soc = simulated_soc
+                grid_import = 0.0
+                pv_kw_avg = 0.0
+                load_kw_avg = 0.0
+                price = rate.get("import_price", rate.get("price", 0.0))
+                export_price = rate.get("export_price", price * 0.8)
 
             limit_pct = 100.0 if state != "SELF_CONSUMPTION" else 0.0
 
@@ -304,8 +274,9 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     "Export Rate": f"{export_price:.2f}",
                     "FSM State": state,
                     "Inverter Limit": f"{limit_pct:.0f}%",
-                    "PV Forecast": f"{pv_kwh:.2f}",
-                    "Load Forecast": f"{load_kwh:.2f}",
+                    "Grid Imp": f"{grid_import:.2f}",
+                    "PV Forecast": f"{pv_kw_avg:.2f}",
+                    "Load Forecast": f"{load_kw_avg:.2f}",
                     "Air Temp Forecast": f"{temp_c:.1f}°C" if temp_c is not None else "—",
                     "SoC Forecast": f"{target_soc:.1f}%",
                     "Interval Cost": f"${interval_cost:.4f}",
@@ -393,7 +364,11 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 forecast_solar=solar_forecast,
                 forecast_load=load_forecast,
                 forecast_price=self.rates.get_rates(),
-                config=self.config,
+                config={
+                    "capacity_kwh": self.config.get(CONF_BATTERY_CAPACITY, 27.0),
+                    "charge_rate_max": self.config.get(CONF_BATTERY_CHARGE_RATE_MAX, 6.3),
+                    "inverter_limit_kw": self.config.get(CONF_INVERTER_LIMIT_MAX, 10.0),
+                },
                 acquisition_cost=0.06,  # Explicit fallback for Live HA integration
             )
             # Run decision logic in background thread
