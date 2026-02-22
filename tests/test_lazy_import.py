@@ -14,7 +14,7 @@ def get_python_files(directory):
                 yield os.path.join(root, file)
 
 def test_no_top_level_pip_imports():
-    """Assert pulp is never imported at the top-level scope of any integration file."""
+    """Assert scipy/numpy is never imported at the top-level scope of any integration file."""
     integration_dir = os.path.join(
         os.path.dirname(__file__),
         "../custom_components/house_battery_control"
@@ -33,17 +33,17 @@ def test_no_top_level_pip_imports():
                 # Check import foo
                 if isinstance(node, ast.Import):
                     for alias in node.names:
-                        assert not alias.name.startswith("pulp"), (
+                        assert not (alias.name.startswith("scipy") or alias.name.startswith("numpy")), (
                             f"CRITICAL: Top-level import '{alias.name}' detected in {py_file}. "
-                            f"PIP dependencies like PuLP MUST be lazy-loaded inside functions to avoid "
+                            f"PIP dependencies like SciPy MUST be lazy-loaded inside functions to avoid "
                             f"crashing Home Assistant before the package finishes installing."
                         )
                 # Check from foo import bar
                 elif isinstance(node, ast.ImportFrom):
-                    if node.module and node.module.startswith("pulp"):
+                    if node.module and (node.module.startswith("scipy") or node.module.startswith("numpy")):
                         pytest.fail(
                             f"CRITICAL: Top-level 'from {node.module} import ...' detected in {py_file}. "
-                            f"PIP dependencies like PuLP MUST be lazy-loaded inside functions to avoid "
+                            f"PIP dependencies like SciPy MUST be lazy-loaded inside functions to avoid "
                             f"crashing Home Assistant before the package finishes installing."
                         )
 
