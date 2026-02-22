@@ -2,9 +2,9 @@ import json
 import os
 
 MANIFEST_PATH = os.path.join(
-    os.path.dirname(__file__),
-    "../custom_components/house_battery_control/manifest.json"
+    os.path.dirname(__file__), "../custom_components/house_battery_control/manifest.json"
 )
+
 
 def test_manifest_includes_scipy():
     """Ensure the manifest accurately declares SciPy as a physical PIP requirement."""
@@ -20,5 +20,6 @@ def test_manifest_includes_scipy():
     has_scipy = any(req.startswith("scipy") for req in reqs)
     has_numpy = any(req.startswith("numpy") for req in reqs)
 
-    assert has_scipy and has_numpy, "CRITICAL: The LP solver (lin_fsm.py) requires 'scipy' and 'numpy', but they are missing from manifest.json requirements! Home Assistant will not install them."
-
+    assert has_scipy and has_numpy, (
+        "CRITICAL: The LP solver (lin_fsm.py) requires 'scipy' and 'numpy', but they are missing from manifest.json requirements! Home Assistant will not install them."
+    )

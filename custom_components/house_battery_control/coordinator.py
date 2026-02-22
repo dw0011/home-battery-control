@@ -171,14 +171,13 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
         load_forecast: list[Any],
         weather: list[Any],
         current_soc: float,
-        current_state: str,
+        future_plan: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        """Iterate over the rates timeline to simulate the internal FSM calculation engine's execution path.
+        """Iterate over the rates timeline to unpack the FSM LP solver's execution path.
 
         Outputs an interpolation table with explicitly rounded strings that matches the precise
         state logic Home Assistant will execute, mapped by UTC timestamp rather than array index.
         """
-        from custom_components.house_battery_control.fsm.base import FSMContext
         from homeassistant.util import dt as dt_util
 
         # Pre-parse Load
@@ -250,7 +249,9 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             pv_kwh = pv_kw_avg * duration_hours
 
             # --- 2. Load Interpolation ---
-            matched_loads = [float(str(lf["kw"])) for lf in parsed_loads if start <= lf["start"] < end]  # type: ignore
+            matched_loads = [
+                float(str(lf["kw"])) for lf in parsed_loads if start <= lf["start"] < end
+            ]  # type: ignore
             load_kw_avg = sum(matched_loads) / len(matched_loads) if matched_loads else 0.0
 
             # --- 3. Weather Interpolation (Nearest Neighbor) ---
@@ -262,65 +263,36 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 temp_c = closest.get("temperature")
 
             # FSM Constants
-            inverter_limit = getattr(self, "inverter_limit_kw", 10.0)
-            capacity = getattr(self, "capacity_kwh", 27.0)
+            capacity = self.config.get(CONF_BATTERY_CAPACITY, 27.0)
 
-            # Build FSM Context for simulation
-            ctx = FSMContext(
-                soc=simulated_soc,
-                solar_production=pv_kw_avg,
-                load_power=load_kw_avg,
-                grid_voltage=230.0,
-                current_price=price,
-                forecast_solar=solar_forecast,
-                forecast_load=load_forecast,
-                forecast_price=rates,
-                config={"capacity_kwh": capacity, "inverter_limit_kw": inverter_limit},
-            )
+            # --- 4. Map LP Solver Plan via Time Offset ---
+            mid_time = start + (end - start) / 2
+            offset_mins = (mid_time - dt_util.utcnow()).total_seconds() / 60.0
+            idx = int(offset_mins / 5.0)
 
-            if self.fsm:
-                sim_res = self.fsm.calculate_next_state(ctx)
-                state = sim_res.state
-                limit_pct = (
-                    min(100.0, (abs(sim_res.limit_kw) / inverter_limit) * 100.0)
-                    if inverter_limit > 0
-                    else 0.0
-                )
-
-                # Flow Physics
-                if state == "CHARGE_GRID":
-                    sim_battery_p = sim_res.limit_kw
-                elif state == "CHARGE_SOLAR":
-                    sim_battery_p = sim_res.limit_kw
-                elif state == "DISCHARGE_HOME":
-                    sim_battery_p = -sim_res.limit_kw
-                else:
-                    sim_battery_p = 0.0
-
-                # Battery impact
-                soc_delta = (sim_battery_p * duration_hours) / capacity * 100.0
-                next_soc = max(0.0, min(100.0, simulated_soc + soc_delta))
-
-                # Grid impact (Cost)
-                # Load minus PV minus Battery flow (where Battery consuming = positive flow)
-                net_import_kw = load_kw_avg - pv_kw_avg + sim_battery_p
-                interval_kwh = net_import_kw * duration_hours
-
-                # Assign to export price if negative flow
-                if interval_kwh < 0:
-                    interval_cost = interval_kwh * export_price / 100.0
-                else:
-                    interval_cost = interval_kwh * price / 100.0
-
-                cumulative += interval_cost
+            if future_plan and 0 <= idx < len(future_plan):
+                state = future_plan[idx].get("state", "UNKNOWN")
+                target_soc = future_plan[idx].get("target_soc", simulated_soc)
             else:
-                state = "IDLE"
-                limit_pct = 0.0
-                interval_cost = 0.0
-                next_soc = simulated_soc
+                state = "SELF_CONSUMPTION"
+                target_soc = simulated_soc
 
-            # Spec: Output total integrated energy (kWh) over the duration, not instantaneous power
+            limit_pct = 100.0 if state != "SELF_CONSUMPTION" else 0.0
+
+            # --- 5. Battery Physics ---
+            soc_delta = target_soc - simulated_soc
+            pv_kwh = pv_kw_avg * duration_hours
             load_kwh = load_kw_avg * duration_hours
+            battery_kwh = (soc_delta / 100.0) * capacity
+
+            # Grid Impact = Load - PV + Battery Charge
+            interval_kwh = load_kwh - pv_kwh + battery_kwh
+            if interval_kwh < 0:
+                interval_cost = interval_kwh * export_price / 100.0
+            else:
+                interval_cost = interval_kwh * price / 100.0
+
+            cumulative += interval_cost
 
             table.append(
                 {
@@ -335,14 +307,14 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     "PV Forecast": f"{pv_kwh:.2f}",
                     "Load Forecast": f"{load_kwh:.2f}",
                     "Air Temp Forecast": f"{temp_c:.1f}°C" if temp_c is not None else "—",
-                    "SoC Forecast": f"{simulated_soc:.1f}%",
+                    "SoC Forecast": f"{target_soc:.1f}%",
                     "Interval Cost": f"${interval_cost:.4f}",
                     "Cumulative Total": f"${cumulative:.2f}",
                 }
             )
 
             # Carry over SoC
-            simulated_soc = next_soc
+            simulated_soc = target_soc
 
         return table
 
@@ -422,7 +394,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 forecast_load=load_forecast,
                 forecast_price=self.rates.get_rates(),
                 config=self.config,
-                acquisition_cost=0.06  # Explicit fallback for Live HA integration
+                acquisition_cost=0.06,  # Explicit fallback for Live HA integration
             )
             # Run decision logic in background thread
             fsm_result = await self.hass.async_add_executor_job(
@@ -468,7 +440,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     load_forecast,
                     self.weather.get_forecast(),
                     soc,
-                    fsm_result.state,
+                    fsm_result.future_plan or [],
                 ),
                 "sensors": self._build_sensor_diagnostics(),
                 "last_update": dt_util.utcnow().isoformat(),

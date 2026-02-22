@@ -30,7 +30,6 @@ class DummyCoordinator:
                 parsed_loads.append({"start": st, "kw": float(lf.get("kw", 0.0))})
 
         table = []
-        simulated_soc = current_soc
 
         for rate in rates:
             start = rate["start"]
@@ -47,7 +46,9 @@ class DummyCoordinator:
 
             # Fallback to nearest neighbor if no strict geometric overlap
             if not matched_loads and parsed_loads:
-                closest = min(parsed_loads, key=lambda l: abs((start - l["start"]).total_seconds()))
+                closest = min(
+                    parsed_loads, key=lambda ld: abs((start - ld["start"]).total_seconds())
+                )
                 matched_loads.append(closest["kw"])
 
             load_kw_avg = sum(matched_loads) / len(matched_loads) if matched_loads else 0.0

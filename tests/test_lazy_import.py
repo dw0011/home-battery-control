@@ -13,11 +13,11 @@ def get_python_files(directory):
             if file.endswith(".py"):
                 yield os.path.join(root, file)
 
+
 def test_no_top_level_pip_imports():
     """Assert scipy/numpy is never imported at the top-level scope of any integration file."""
     integration_dir = os.path.join(
-        os.path.dirname(__file__),
-        "../custom_components/house_battery_control"
+        os.path.dirname(__file__), "../custom_components/house_battery_control"
     )
 
     assert os.path.exists(integration_dir), "Integration directory not found."
@@ -33,19 +33,24 @@ def test_no_top_level_pip_imports():
                 # Check import foo
                 if isinstance(node, ast.Import):
                     for alias in node.names:
-                        assert not (alias.name.startswith("scipy") or alias.name.startswith("numpy")), (
+                        assert not (
+                            alias.name.startswith("scipy") or alias.name.startswith("numpy")
+                        ), (
                             f"CRITICAL: Top-level import '{alias.name}' detected in {py_file}. "
                             f"PIP dependencies like SciPy MUST be lazy-loaded inside functions to avoid "
                             f"crashing Home Assistant before the package finishes installing."
                         )
                 # Check from foo import bar
                 elif isinstance(node, ast.ImportFrom):
-                    if node.module and (node.module.startswith("scipy") or node.module.startswith("numpy")):
+                    if node.module and (
+                        node.module.startswith("scipy") or node.module.startswith("numpy")
+                    ):
                         pytest.fail(
                             f"CRITICAL: Top-level 'from {node.module} import ...' detected in {py_file}. "
                             f"PIP dependencies like SciPy MUST be lazy-loaded inside functions to avoid "
                             f"crashing Home Assistant before the package finishes installing."
                         )
+
 
 def test_lin_fsm_still_operates_with_lazy_loading(base_context):
     """Assert lazy-loading hasn't broken the FSM logic."""
@@ -65,15 +70,16 @@ def test_lin_fsm_still_operates_with_lazy_loading(base_context):
         battery=battery,
         actual_previous_load=0,
         actual_previous_pv_production=0,
-        price_buy=[10.0]*288,
-        price_sell=[5.0]*288,
-        load_forecast=[1.0]*288,
-        pv_forecast=[0.0]*288,
-        acquisition_cost=0.0
+        price_buy=[10.0] * 288,
+        price_sell=[5.0] * 288,
+        load_forecast=[1.0] * 288,
+        pv_forecast=[0.0] * 288,
+        acquisition_cost=0.0,
     )
 
     assert res is not None
-    assert len(res) == 4
+    assert len(res) == 5
+
 
 @pytest.fixture
 def base_context():

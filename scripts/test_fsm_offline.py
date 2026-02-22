@@ -117,7 +117,6 @@ def main():
 
     # Physics Tracking
     soc = 30.0  # Start day at 30%
-    capacity_kwh = 13.5  # Standard Powerwall
 
     # 3. Execution Ticks
     print(

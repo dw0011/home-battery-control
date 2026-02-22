@@ -4,26 +4,30 @@ from .base import BatteryStateMachine, FSMContext, FSMResult
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class LinearBatteryController(object):
     def __init__(self):
-        self.step = 288 # For 24 hour 5 min resolution
+        self.step = 288  # For 24 hour 5 min resolution
 
-    def propose_state_of_charge(self,
-                                site_id,
-                                timestamp,
-                                battery,
-                                actual_previous_load,
-                                actual_previous_pv_production,
-                                price_buy,
-                                price_sell,
-                                load_forecast,
-                                pv_forecast,
-                                acquisition_cost=0.0):
-
+    def propose_state_of_charge(
+        self,
+        site_id,
+        timestamp,
+        battery,
+        actual_previous_load,
+        actual_previous_pv_production,
+        price_buy,
+        price_sell,
+        load_forecast,
+        pv_forecast,
+        acquisition_cost=0.0,
+    ):
 
         self.step -= 1
-        if (self.step == 1): return 0
-        if (self.step > 1): number_step = min(288, self.step)
+        if self.step == 1:
+            return 0
+        if self.step > 1:
+            number_step = min(288, self.step)
 
         #
         energy = [None] * number_step
@@ -31,10 +35,10 @@ class LinearBatteryController(object):
         for i in range(number_step):
             # Energy array tracks net load requirements
             energy[i] = load_forecast[i] - pv_forecast[i]
-        #battery
+        # battery
         capacity = battery.capacity
         charging_efficiency = battery.charging_efficiency
-        discharging_efficiency = 1. / battery.discharging_efficiency
+        discharging_efficiency = 1.0 / battery.discharging_efficiency
         current = capacity * battery.current_charge
         limit = battery.charging_power_limit
         dis_limit = battery.discharging_power_limit
@@ -47,79 +51,102 @@ class LinearBatteryController(object):
         import numpy as np
         from scipy.optimize import linprog
 
-        N = number_step
-        num_vars = 5 * N + 1
+        n = number_step
+        num_vars = 5 * n + 1
+
+        c_offset = 0
+        dh_offset = n
+        dg_offset = 2 * n
+        g_offset = 3 * n
+        b_offset = 4 * n
 
         # Determine bounds
         bounds = []
         # c_i
-        for i in range(N):
+        for i in range(n):
             bounds.append((0.0, limit))
         # dh_i
-        for i in range(N):
+        for i in range(n):
             max_home_kwh = max(0.0, energy[i])
             bounds.append((-max_home_kwh, 0.0))
         # dg_i
-        for i in range(N):
+        for i in range(n):
             max_home_kwh = max(0.0, energy[i])
             max_grid_kwh = max(0.0, dis_limit - max_home_kwh)
             bounds.append((-max_grid_kwh, 0.0))
         # g_i
-        for i in range(N):
+        for i in range(n):
             bounds.append((0.0, None))
         # b_i
-        for i in range(N + 1):
+        for i in range(n + 1):
             bounds.append((0.0, capacity))
 
         # Objective 'c'
         c_obj = np.zeros(num_vars)
-        for i in range(N):
-            c_obj[i] = price_sell[i] + price_buy[i] / 1000.0                   # c_i
-            c_obj[N + i] = price_buy[i]                                        # dh_i
-            c_obj[2*N + i] = price_sell[i]                                     # dg_i
-            c_obj[3*N + i] = price_buy[i] - price_sell[i]                      # g_i
-        c_obj[5*N] = -max(0.001, acquisition_cost)                             # b_N (last one)
+        for i in range(n):
+            c_obj[i] = price_sell[i] + price_buy[i] / 1000.0  # c_i
+            c_obj[n + i] = price_buy[i]  # dh_i
+        c = np.zeros(num_vars)
+        for i in range(n):
+            c[c_offset + i] = price_sell[i] + price_buy[i] / 1000.0  # c_i
+            c[dh_offset + i] = price_buy[i]  # dh_i
+            c[dg_offset + i] = price_sell[i]  # dg_i
+            c[g_offset + i] = price_buy[i] - price_sell[i]  # g_i
+        c[b_offset + n] = -max(0.001, acquisition_cost)  # b_N (last one)
 
         # Inequality Constraints A_ub x <= b_ub
         # -g_i + c_i + dh_i + dg_i <= -energy[i]
-        A_ub = np.zeros((N, num_vars))
-        b_ub = np.zeros(N)
-        for i in range(N):
-            A_ub[i, i] = 1.0           # c_i
-            A_ub[i, N + i] = 1.0       # dh_i
-            A_ub[i, 2*N + i] = 1.0     # dg_i
-            A_ub[i, 3*N + i] = -1.0    # g_i
+        a_ub = np.zeros((n, num_vars))
+        b_ub = np.zeros(n)
+        for i in range(n):
+            a_ub[i, g_offset + i] = -1.0
+            a_ub[i, c_offset + i] = 1.0
+            a_ub[i, dh_offset + i] = 1.0
+            a_ub[i, dg_offset + i] = 1.0
             b_ub[i] = -energy[i]
 
         # Equality Constraints A_eq x == b_eq
         # 1. b_0 == current
         # 2. eff_c * c_i + eff_d * dh_i + eff_d * dg_i + b_i - b_{i+1} == 0
-        A_eq = np.zeros((1 + N, num_vars))
-        b_eq = np.zeros(1 + N)
+        a_eq = np.zeros((1 + n, num_vars))
+        b_eq = np.zeros(1 + n)
 
-        A_eq[0, 4*N] = 1.0
+        a_eq[0, b_offset] = 1.0
         b_eq[0] = current
 
-        for i in range(N):
-            A_eq[1 + i, i] = charging_efficiency                # c_i
-            A_eq[1 + i, N + i] = discharging_efficiency         # dh_i
-            A_eq[1 + i, 2*N + i] = discharging_efficiency       # dg_i
-            A_eq[1 + i, 4*N + i] = 1.0                          # b_i
-            A_eq[1 + i, 4*N + i + 1] = -1.0                     # b_{i+1}
+        for i in range(n):
+            a_eq[i + 1, c_offset + i] = charging_efficiency
+            a_eq[i + 1, dh_offset + i] = discharging_efficiency
+            a_eq[i + 1, dg_offset + i] = discharging_efficiency
+            a_eq[i + 1, b_offset + i] = 1.0
+            a_eq[i + 1, b_offset + i + 1] = -1.0
             b_eq[1 + i] = 0.0
 
         # Run SciPy Linprog
-        res = linprog(c_obj, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq, bounds=bounds, method='highs')
+        res = linprog(c, A_ub=a_ub, b_ub=b_ub, A_eq=a_eq, b_eq=b_eq, bounds=bounds, method="highs")
 
         if not res.success:
             _LOGGER.warning("Linear solver could not find optimal solution: %s", res.message)
             return battery.current_charge, 0.0, 0.0, 0.0
 
-        return res.x[4*N + 1] / capacity, float(res.fun), float(abs(res.x[N])), float(abs(res.x[2*N]))
+        return (
+            res.x[b_offset + 1] / capacity,
+            float(res.fun),
+            float(abs(res.x[dh_offset])),
+            float(abs(res.x[dg_offset])),
+        )
 
 
 class FakeBattery:
-    def __init__(self, capacity, current_charge, charge_limit, discharge_limit, charging_efficiency=0.95, discharging_efficiency=0.95):
+    def __init__(
+        self,
+        capacity,
+        current_charge,
+        charge_limit,
+        discharge_limit,
+        charging_efficiency=0.95,
+        discharging_efficiency=0.95,
+    ):
         self.capacity = capacity
         # charge state in percentage (0-1)
         self.current_charge = current_charge
@@ -133,6 +160,7 @@ class LinearBatteryStateMachine(BatteryStateMachine):
     """
     Implementation using pywraplp solver.
     """
+
     def __init__(self):
         self.controller = LinearBatteryController()
 
@@ -190,6 +218,7 @@ class LinearBatteryStateMachine(BatteryStateMachine):
         current_soc_perc = max(0.0, min(100.0, context.soc)) / 100.0
 
         import math
+
         # Extract Round Trip Efficiency (RTE) from config. Default to 0.90 if missing.
         rte = float(context.config.get("round_trip_efficiency", 0.90))
         # Mathematical one-way efficiency is the square root of the round trip efficiency
@@ -201,21 +230,23 @@ class LinearBatteryStateMachine(BatteryStateMachine):
             charge_limit=limit_kw_charge,
             discharge_limit=limit_kw_discharge,
             charging_efficiency=one_way_eff,
-            discharging_efficiency=one_way_eff
+            discharging_efficiency=one_way_eff,
         )
 
         try:
-            target_soc_perc, projected_cost, raw_home_dis, raw_grid_dis = self.controller.propose_state_of_charge(
-                site_id=0,
-                timestamp="00:00",
-                battery=battery,
-                actual_previous_load=0,
-                actual_previous_pv_production=0,
-                price_buy=price_buy,
-                price_sell=price_sell,
-                load_forecast=load_f,
-                pv_forecast=pv_f,
-                acquisition_cost=context.acquisition_cost
+            target_soc_perc, projected_cost, raw_home_dis, raw_grid_dis = (
+                self.controller.propose_state_of_charge(
+                    site_id=0,
+                    timestamp="00:00",
+                    battery=battery,
+                    actual_previous_load=0,
+                    actual_previous_pv_production=0,
+                    price_buy=price_buy,
+                    price_sell=price_sell,
+                    load_forecast=load_f,
+                    pv_forecast=pv_f,
+                    acquisition_cost=context.acquisition_cost,
+                )
             )
         except Exception as e:
             _LOGGER.error("Linear Solver failed: %s", e)
@@ -239,12 +270,12 @@ class LinearBatteryStateMachine(BatteryStateMachine):
                 limit_kw=round(min(limit_kw_charge, req_power), 2),
                 reason="LP Optimized Charge",
                 target_soc=target_soc_perc * 100.0,
-                projected_cost=projected_cost
+                projected_cost=projected_cost,
             )
         elif power_kw < -0.1:
             req_power = abs(power_kw) * battery.discharging_efficiency
-            net_grid_export = raw_grid_dis / (5.0/60.0)
-            net_home_offset = raw_home_dis / (5.0/60.0)
+            net_grid_export = raw_grid_dis / (5.0 / 60.0)
+            net_home_offset = raw_home_dis / (5.0 / 60.0)
 
             if net_grid_export > net_home_offset:
                 return FSMResult(
@@ -252,7 +283,7 @@ class LinearBatteryStateMachine(BatteryStateMachine):
                     limit_kw=round(min(limit_kw_discharge, req_power), 2),
                     reason="LP Optimized Grid Export",
                     target_soc=target_soc_perc * 100.0,
-                    projected_cost=projected_cost
+                    projected_cost=projected_cost,
                 )
             else:
                 return FSMResult(
@@ -260,7 +291,7 @@ class LinearBatteryStateMachine(BatteryStateMachine):
                     limit_kw=round(min(limit_kw_discharge, req_power), 2),
                     reason="LP Optimized Home Discharge",
                     target_soc=target_soc_perc * 100.0,
-                    projected_cost=projected_cost
+                    projected_cost=projected_cost,
                 )
 
         return FSMResult(
@@ -268,5 +299,5 @@ class LinearBatteryStateMachine(BatteryStateMachine):
             limit_kw=0.0,
             reason="LP Optimization: Idle optimal",
             target_soc=target_soc_perc * 100.0,
-            projected_cost=projected_cost
+            projected_cost=projected_cost,
         )

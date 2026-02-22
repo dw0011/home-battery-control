@@ -302,7 +302,7 @@ def test_coordinator_rounded_outputs():
         coordinator.load_predictor.async_predict = AsyncMock(return_value=[])
         coordinator.fsm = MagicMock()
         coordinator.fsm.calculate_next_state.return_value = SimpleNamespace(
-            state="standby", reason="test", limit_kw=0.0
+            state="standby", reason="test", limit_kw=0.0, future_plan=[]
         )
         coordinator.executor = MagicMock()
         coordinator.executor.apply_state = AsyncMock()
@@ -362,6 +362,7 @@ def test_pv_interpolation():
     )
     coordinator.capacity_kwh = 27.0
     coordinator.inverter_limit_kw = 10.0
+    coordinator.config = {}
 
     table = coordinator._build_diagnostic_plan_table(
         rates=rates,
@@ -369,7 +370,7 @@ def test_pv_interpolation():
         load_forecast=[],
         weather=[],
         current_soc=50.0,
-        current_state="IDLE",
+        future_plan=[],
     )
 
     assert len(table) == 6
@@ -424,7 +425,7 @@ async def test_coordinator_update_data_exception_recovery(mock_hass):
         coordinator.load_predictor = AsyncMock()
         coordinator.fsm = MagicMock()
         coordinator.fsm.calculate_next_state.return_value = SimpleNamespace(
-            state="standby", reason="test", limit_kw=0.0
+            state="standby", reason="test", limit_kw=0.0, future_plan=[]
         )
         coordinator.executor = AsyncMock()
 
@@ -482,7 +483,7 @@ def test_diagnostic_plan_table_energy_conversion():
         load_forecast=load_forecast,
         weather=weather,
         current_soc=50.0,
-        current_state="IDLE",
+        future_plan=[],
     )
 
     assert len(table) == 1

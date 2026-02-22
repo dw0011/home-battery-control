@@ -1,25 +1,29 @@
+try:
+    from .base import BatteryStateMachine, FSMContext, FSMResult
+except ImportError:
+    from base import BatteryStateMachine, FSMContext, FSMResult
 import logging
-
-from .base import BatteryStateMachine, FSMContext, FSMResult
 
 _LOGGER = logging.getLogger(__name__)
 
+
 class LinearBatteryController(object):
     def __init__(self):
-        self.step = 288 # For 24 hour 5 min resolution
+        self.step = 288  # For 24 hour 5 min resolution
 
-    def propose_state_of_charge(self,
-                                site_id,
-                                timestamp,
-                                battery,
-                                actual_previous_load,
-                                actual_previous_pv_production,
-                                price_buy,
-                                price_sell,
-                                load_forecast,
-                                pv_forecast,
-                                acquisition_cost=0.0):
-
+    def propose_state_of_charge(
+        self,
+        site_id,
+        timestamp,
+        battery,
+        actual_previous_load,
+        actual_previous_pv_production,
+        price_buy,
+        price_sell,
+        load_forecast,
+        pv_forecast,
+        acquisition_cost=0.0,
+    ):
 
         self.step -= 1
         if self.step == 1:
@@ -33,10 +37,10 @@ class LinearBatteryController(object):
         for i in range(number_step):
             # Energy array tracks net load requirements
             energy[i] = load_forecast[i] - pv_forecast[i]
-        #battery
+        # battery
         capacity = battery.capacity
         charging_efficiency = battery.charging_efficiency
-        discharging_efficiency = 1. / battery.discharging_efficiency
+        discharging_efficiency = 1.0 / battery.discharging_efficiency
         current = capacity * battery.current_charge
         limit = battery.charging_power_limit
         dis_limit = battery.discharging_power_limit
@@ -119,22 +123,52 @@ class LinearBatteryController(object):
             b_eq[i + 1] = 0.0
 
         # Solve
-        res = linprog(c, A_ub=a_ub, b_ub=b_ub, A_eq=a_eq, b_eq=b_eq, bounds=bounds, method='highs')
+        res = linprog(c, A_ub=a_ub, b_ub=b_ub, A_eq=a_eq, b_eq=b_eq, bounds=bounds, method="highs")
 
         if not res.success:
             _LOGGER.warning("Linear solver could not find optimal solution: %s", res.message)
-            return battery.current_charge, 0.0, 0.0, 0.0
+            return battery.current_charge, 0.0, 0.0, 0.0, []
 
         b_1 = res.x[b_offset + 1]
         obj = res.fun
         dh_0 = abs(res.x[dh_offset])
         dg_0 = abs(res.x[dg_offset])
 
-        return b_1 / capacity, obj, dh_0, dg_0
+        sequence = []
+        for i in range(number_step):
+            step_b = res.x[b_offset + i + 1]
+            step_c = res.x[c_offset + i]
+            step_g = res.x[g_offset + i]
+            step_dg = abs(res.x[dg_offset + i])
+
+            # Interpret the mathematical flows into semantic controller states
+            # We map to the 3 native hardware modes required by the HA Home Battery Controller.
+            # Any state that is not explicitly forcing grid import or grid export is simply
+            # delegating back to the inverter's automated Self-Consumption mode.
+            if step_dg > 0.005:
+                state = "DISCHARGE_GRID"
+            elif step_c > 0.005 and step_g > 0.005:
+                state = "CHARGE_GRID"
+            else:
+                state = "SELF_CONSUMPTION"
+
+            sequence.append(
+                {"target_soc": (step_b / capacity) * 100.0, "state": state, "grid_import": step_g}
+            )
+
+        return b_1 / capacity, obj, dh_0, dg_0, sequence
 
 
 class FakeBattery:
-    def __init__(self, capacity, current_charge, charge_limit, discharge_limit, charging_efficiency=0.95, discharging_efficiency=0.95):
+    def __init__(
+        self,
+        capacity,
+        current_charge,
+        charge_limit,
+        discharge_limit,
+        charging_efficiency=0.95,
+        discharging_efficiency=0.95,
+    ):
         self.capacity = capacity
         # charge state in percentage (0-1)
         self.current_charge = current_charge
@@ -148,17 +182,14 @@ class LinearBatteryStateMachine(BatteryStateMachine):
     """
     Implementation using pywraplp solver.
     """
+
     def __init__(self):
         self.controller = LinearBatteryController()
 
     def calculate_next_state(self, context: FSMContext) -> FSMResult:
-        forecast_len = min(
-            len(context.forecast_price), len(context.forecast_solar), len(context.forecast_load)
-        )
-        if forecast_len < 1:
-            return FSMResult(state="IDLE", limit_kw=0.0, reason="Forecast too short")
-
-        number_step = min(forecast_len, 288)
+        # Force a strict 24-hour horizon (288 steps) to push the terminal boundary value out of frame.
+        # This prevents the solver from prematurely dumping energy to the grid if the API forecast data falls short.
+        number_step = 288
 
         # Always reset step count in loop for stateless evaluation
         self.controller.step = number_step
@@ -166,9 +197,19 @@ class LinearBatteryStateMachine(BatteryStateMachine):
         price_buy = [0.0] * number_step
         price_sell = [0.0] * number_step
         for t in range(number_step):
-            if isinstance(context.forecast_price[t], dict):
-                price_buy[t] = float(context.forecast_price[t].get("import_price", 0.0))
-                price_sell[t] = float(context.forecast_price[t].get("export_price", 0.0))
+            idx = min(t, len(context.forecast_price) - 1) if len(context.forecast_price) > 0 else 0
+            if idx < len(context.forecast_price):
+                if isinstance(context.forecast_price[idx], dict):
+                    price_buy[t] = float(context.forecast_price[idx].get("import_price", 0.0))
+                    price_sell[t] = float(
+                        context.forecast_price[idx].get(
+                            "export_price",
+                            float(context.forecast_price[idx].get("import_price", 0.0)) * 0.8,
+                        )
+                    )
+                else:
+                    price_buy[t] = float(context.current_price)
+                    price_sell[t] = float(context.current_price * 0.8)
             else:
                 price_buy[t] = float(context.current_price)
                 price_sell[t] = float(context.current_price * 0.8)
@@ -176,15 +217,25 @@ class LinearBatteryStateMachine(BatteryStateMachine):
         load_f = [0.0] * number_step
         pv_f = [0.0] * number_step
         for t in range(number_step):
-            if isinstance(context.forecast_solar[t], dict):
-                pv_f[t] = float(context.forecast_solar[t].get("kw", 0.0))
+            # Pad solar with the last known assumed solar
+            idx = min(t, len(context.forecast_solar) - 1) if len(context.forecast_solar) > 0 else 0
+            if idx < len(context.forecast_solar):
+                if isinstance(context.forecast_solar[idx], dict):
+                    pv_f[t] = float(context.forecast_solar[idx].get("kw", 0.0))
+                else:
+                    pv_f[t] = float(context.forecast_solar[idx])
             else:
-                pv_f[t] = float(context.forecast_solar[t])
+                pv_f[t] = 0.0
 
-            if isinstance(context.forecast_load[t], dict):
-                load_f[t] = float(context.forecast_load[t].get("kw", 0.0))
+            # Pad load with the last known assumed load
+            idx = min(t, len(context.forecast_load) - 1) if len(context.forecast_load) > 0 else 0
+            if idx < len(context.forecast_load):
+                if isinstance(context.forecast_load[idx], dict):
+                    load_f[t] = float(context.forecast_load[idx].get("kw", 0.0))
+                else:
+                    load_f[t] = float(context.forecast_load[idx])
             else:
-                load_f[t] = float(context.forecast_load[t])
+                load_f[t] = 0.0
 
         # Convert kW to kWh for the discrete step bounds
         load_f = [kw * (5.0 / 60.0) for kw in load_f]
@@ -205,6 +256,7 @@ class LinearBatteryStateMachine(BatteryStateMachine):
         current_soc_perc = max(0.0, min(100.0, context.soc)) / 100.0
 
         import math
+
         # Extract Round Trip Efficiency (RTE) from config. Default to 0.90 if missing.
         rte = float(context.config.get("round_trip_efficiency", 0.90))
         # Mathematical one-way efficiency is the square root of the round trip efficiency
@@ -216,21 +268,35 @@ class LinearBatteryStateMachine(BatteryStateMachine):
             charge_limit=limit_kw_charge,
             discharge_limit=limit_kw_discharge,
             charging_efficiency=one_way_eff,
-            discharging_efficiency=one_way_eff
+            discharging_efficiency=one_way_eff,
         )
 
+        # Dynamic terminal valuation to prevent the solver dumping the battery to 0% at the horizon boundary.
+        # We use a mathematically blended weight: the average of the median import price and the acquisition cost.
+        # This explicitly tells the solver "tomorrow's energy has value" (preventing a dump)
+        # without making it so high that it incentivizes hoarding 26c grid power today.
+        import statistics
+
+        median_buy_price = (
+            statistics.median(price_buy) if len(price_buy) > 0 else context.acquisition_cost
+        )
+        blended_valuation = (median_buy_price + context.acquisition_cost) / 2.0
+        terminal_valuation = max(context.acquisition_cost, blended_valuation)
+
         try:
-            target_soc_perc, projected_cost, raw_home_dis, raw_grid_dis = self.controller.propose_state_of_charge(
-                site_id=0,
-                timestamp="00:00",
-                battery=battery,
-                actual_previous_load=0,
-                actual_previous_pv_production=0,
-                price_buy=price_buy,
-                price_sell=price_sell,
-                load_forecast=load_f,
-                pv_forecast=pv_f,
-                acquisition_cost=context.acquisition_cost
+            target_soc_perc, projected_cost, raw_home_dis, raw_grid_dis, sequence = (
+                self.controller.propose_state_of_charge(
+                    site_id=0,
+                    timestamp="00:00",
+                    battery=battery,
+                    actual_previous_load=0,
+                    actual_previous_pv_production=0,
+                    price_buy=price_buy,
+                    price_sell=price_sell,
+                    load_forecast=load_f,
+                    pv_forecast=pv_f,
+                    acquisition_cost=terminal_valuation,
+                )
             )
         except Exception as e:
             _LOGGER.error("Linear Solver failed: %s", e)
@@ -254,12 +320,13 @@ class LinearBatteryStateMachine(BatteryStateMachine):
                 limit_kw=round(min(limit_kw_charge, req_power), 2),
                 reason="LP Optimized Charge",
                 target_soc=target_soc_perc * 100.0,
-                projected_cost=projected_cost
+                projected_cost=projected_cost,
+                future_plan=sequence,
             )
         elif power_kw < -0.1:
             req_power = abs(power_kw) * battery.discharging_efficiency
-            net_grid_export = raw_grid_dis / (5.0/60.0)
-            net_home_offset = raw_home_dis / (5.0/60.0)
+            net_grid_export = raw_grid_dis / (5.0 / 60.0)
+            net_home_offset = raw_home_dis / (5.0 / 60.0)
 
             if net_grid_export > net_home_offset:
                 return FSMResult(
@@ -267,7 +334,8 @@ class LinearBatteryStateMachine(BatteryStateMachine):
                     limit_kw=round(min(limit_kw_discharge, req_power), 2),
                     reason="LP Optimized Grid Export",
                     target_soc=target_soc_perc * 100.0,
-                    projected_cost=projected_cost
+                    projected_cost=projected_cost,
+                    future_plan=sequence,
                 )
             else:
                 return FSMResult(
@@ -275,7 +343,8 @@ class LinearBatteryStateMachine(BatteryStateMachine):
                     limit_kw=round(min(limit_kw_discharge, req_power), 2),
                     reason="LP Optimized Home Discharge",
                     target_soc=target_soc_perc * 100.0,
-                    projected_cost=projected_cost
+                    projected_cost=projected_cost,
+                    future_plan=sequence,
                 )
 
         return FSMResult(
@@ -283,5 +352,6 @@ class LinearBatteryStateMachine(BatteryStateMachine):
             limit_kw=0.0,
             reason="LP Optimization: Idle optimal",
             target_soc=target_soc_perc * 100.0,
-            projected_cost=projected_cost
+            projected_cost=projected_cost,
+            future_plan=sequence,
         )

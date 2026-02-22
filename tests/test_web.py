@@ -252,6 +252,7 @@ def _build_test_table(data):
     from custom_components.house_battery_control.coordinator import HBCDataUpdateCoordinator
 
     coord = HBCDataUpdateCoordinator.__new__(HBCDataUpdateCoordinator)
+    coord.config = {}
     coord.fsm = MagicMock()
     coord.fsm.calculate_next_state.return_value = SimpleNamespace(
         state=data.get("state", "IDLE"), limit_kw=0.0, reason="Test"
@@ -265,7 +266,7 @@ def _build_test_table(data):
         load_forecast=data.get("load_forecast", []),
         weather=data.get("weather", []),
         current_soc=data.get("soc", 50.0),
-        current_state=data.get("state", "IDLE"),
+        future_plan=data.get("future_plan", []),
     )
 
 

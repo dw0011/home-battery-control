@@ -203,7 +203,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
         )
 
-    async def async_step_control(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_control(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """Step 3: Control Services (Optional — skip for debug mode)."""
         if user_input is not None:
             # If skip is checked, create entry without control entities
@@ -384,7 +386,9 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
             ),
         )
 
-    async def async_step_control(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+    async def async_step_control(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """Update Control Services options."""
         if user_input is not None:
             self._data.update(user_input)
