@@ -202,7 +202,7 @@ class HBCPanel extends LitElement {
             <tbody>
               ${rows.map(
       (r) => html`
-                  <tr>
+                  <tr class="${r.state === 'SELF_CONSUMPTION' ? 'state-self' : r.state === 'CHARGE_GRID' ? 'state-charge' : r.state === 'DISCHARGE_GRID' ? 'state-discharge' : ''}">
                     <td>${r.time}</td>
                     <td>${r.localTime}</td>
                     <td>${r.imp}</td>
@@ -425,6 +425,15 @@ class HBCPanel extends LitElement {
       }
       tr:nth-child(even) {
         background: #15153a;
+      }
+      tr.state-self {
+        background-color: rgba(0, 212, 255, 0.15) !important;
+      }
+      tr.state-charge {
+        background-color: rgba(0, 255, 136, 0.15) !important;
+      }
+      tr.state-discharge {
+        background-color: rgba(255, 107, 107, 0.15) !important;
       }
       .badge {
         display: inline-block;
