@@ -450,15 +450,15 @@ def test_plan_table_interval_cost_calculation():
         {
             "start": start_time,
             "end": start_time + timedelta(minutes=5),
-            "import_price": 20.0,
-            "export_price": 5.0,
+            "import_price": 0.20,
+            "export_price": 0.05,
         }
     ]
 
     # Battery starts at 50%, goes to 50% (no SOC delta).
     # Load = 4.0 kW, PV = 2.0 kW -> Net Grid = 2.0 kW import.
     # Energy across 5 min (0.0833 hrs) = 2.0 * 0.0833 = 0.1666 kWh.
-    # Cost at 20 c/kWh = 0.1666 * 20 / 100 = $0.0333.
+    # Cost at $0.20/kWh = 0.1666 * 0.20 = $0.0333.
     future_plan = [
         {
             "target_soc": 50.0,
@@ -466,8 +466,8 @@ def test_plan_table_interval_cost_calculation():
             "pv": 2.0,
             "grid_import": 2.0,
             "grid_export": 0.0,
-            "import_price": 20.0,
-            "export_price": 5.0,
+            "import_price": 0.20,
+            "export_price": 0.05,
         }
     ]
 

@@ -242,8 +242,8 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 acq_cost = future_plan[idx].get("acquisition_cost", 0.0)
 
                 # Directly calculate programmatic cost from FSM matrices, omitting physics hallucination
-                interval_cost = (grid_import * duration_hours * price / 100.0) - (
-                    grid_export_kw * duration_hours * export_price / 100.0
+                interval_cost = (grid_import * duration_hours * price) - (
+                    grid_export_kw * duration_hours * export_price
                 )
 
             else:
@@ -271,12 +271,12 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 # Grid Impact = Load - PV + Battery Charge
                 interval_kwh = load_kwh - pv_kwh + battery_kwh
                 if interval_kwh < 0:
-                    interval_cost = interval_kwh * export_price / 100.0
+                    interval_cost = interval_kwh * export_price
                     grid_export_kw = (
                         abs(interval_kwh) / duration_hours if duration_hours > 0 else 0.0
                     )
                 else:
-                    interval_cost = interval_kwh * price / 100.0
+                    interval_cost = interval_kwh * price
                     grid_import = interval_kwh / duration_hours if duration_hours > 0 else 0.0
 
             limit_pct = 100.0 if state != "SELF_CONSUMPTION" else 0.0
