@@ -160,6 +160,7 @@ class HBCPanel extends LitElement {
       "Export",
       "State",
       "Limit",
+      "Grid Imp",
       "PV",
       "Load",
       "Temp",
@@ -176,6 +177,7 @@ class HBCPanel extends LitElement {
         exp: r["Export Rate"] || "0.0",
         state: r["FSM State"] || "—",
         limit: r["Inverter Limit"] || "0%",
+        grid: r["Grid Imp"] || "0.00",
         pv: r["PV Forecast"] || "0.00",
         ld: r["Load Forecast"] || "0.00",
         temp: r["Air Temp Forecast"] || "—",
@@ -205,6 +207,7 @@ class HBCPanel extends LitElement {
                     <td>${r.exp}</td>
                     <td>${r.state}</td>
                     <td>${r.limit}</td>
+                    <td>${r.grid}</td>
                     <td>${r.pv}</td>
                     <td>${r.ld}</td>
                     <td>${r.temp}</td>
