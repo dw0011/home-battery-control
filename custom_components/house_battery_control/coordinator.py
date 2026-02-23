@@ -352,6 +352,26 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 ),  # Ideally an instant load sensor, using what's available
             )
 
+            # Align Solar Forecast to Rates Timeline
+            # Solcast returns data from midnight, but Rates start from now().
+            # We must use nearest-neighbor O(N) alignment so the FSM solver doesn't shift the daylight hours.
+            aligned_solar = []
+            rates_timeline = self.rates.get_rates()
+            if rates_timeline and solar_forecast:
+                for rate in rates_timeline:
+                    rate_start = rate["start"]
+                    # Nearest neighbor O(N) alignment
+                    closest = min(
+                        solar_forecast, key=lambda x: abs((x["start"] - rate_start).total_seconds())
+                    )
+                    # If within 30 minutes, assume valid, otherwise 0
+                    if abs((closest["start"] - rate_start).total_seconds()) <= 1800:
+                        aligned_solar.append({"kw": closest["kw"]})
+                    else:
+                        aligned_solar.append({"kw": 0.0})
+            else:
+                aligned_solar = solar_forecast
+
             # Build FSM context and run decision logic
             current_price = self.rates.get_import_price_at(dt_util.now())
 
@@ -361,7 +381,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 load_power=load_p,
                 grid_voltage=240.0,
                 current_price=current_price,
-                forecast_solar=solar_forecast,
+                forecast_solar=aligned_solar,
                 forecast_load=load_forecast,
                 forecast_price=self.rates.get_rates(),
                 config={
