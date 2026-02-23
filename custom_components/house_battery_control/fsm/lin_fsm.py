@@ -134,12 +134,30 @@ class LinearBatteryController(object):
         dh_0 = abs(res.x[dh_offset])
         dg_0 = abs(res.x[dg_offset])
 
+        running_capacity = battery.current_charge
+        running_cost = acquisition_cost
+
         sequence = []
         for i in range(number_step):
             step_b = res.x[b_offset + i + 1]
             step_c = res.x[c_offset + i]
             step_g = res.x[g_offset + i]
             step_dg = abs(res.x[dg_offset + i])
+
+            # Track dynamic acquisition cost based on interval charging flows
+            if step_c > 0.001:
+                # Attribute imported energy costs directly to the battery up to the charged volume.
+                charge_from_grid = min(step_c, step_g)
+                charge_cost = charge_from_grid * price_buy[i]
+
+                current_value = running_capacity * running_cost
+                new_value = current_value + charge_cost
+                new_capacity = running_capacity + step_c
+
+                if new_capacity > 0:
+                    running_cost = new_value / new_capacity
+
+            running_capacity = step_b
 
             # Interpret the mathematical flows into semantic controller states
             # We map to the 3 native hardware modes required by the HA Home Battery Controller.
@@ -162,7 +180,7 @@ class LinearBatteryController(object):
                     "pv": pv_forecast[i] * (60.0 / 5.0),
                     "import_price": price_buy[i],
                     "export_price": price_sell[i],
-                    "acquisition_cost": acquisition_cost,
+                    "acquisition_cost": running_cost,
                 }
             )
 
