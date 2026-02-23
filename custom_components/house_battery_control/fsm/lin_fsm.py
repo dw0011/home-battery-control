@@ -66,15 +66,22 @@ class LinearBatteryController(object):
         b_offset = 4 * number_step
 
         for i in range(number_step):
-            c[g_offset + i] = price_buy[i] - price_sell[i]
+            # Cost of grid import is precisely the purchase price.
+            # (Previously Pb - Ps, which assumed baseline grid flow was a sold asset).
+            c[g_offset + i] = price_buy[i]
             bounds.append((0.0, None))
 
         for i in range(number_step):
+            # Charging from the grid is implicitly captured by `g`.
+            # Charging from PV prevents exporting it, losing Ps.
             c[c_offset + i] = price_sell[i] + price_buy[i] / 1000.0
             bounds.append((0.0, limit))
 
         for i in range(number_step):
-            c[dh_offset + i] = price_buy[i]
+            # Discharging to the home reduces grid import `g`.
+            # `g` already natively saves `Pb`.
+            # We must set this to `Ps` offset so it balances the opportunity cost of not exporting.
+            c[dh_offset + i] = price_sell[i]
             max_home_kwh = max(0.0, energy[i])
             bounds.append((-max_home_kwh, 0.0))
 
@@ -142,6 +149,7 @@ class LinearBatteryController(object):
             step_b = res.x[b_offset + i + 1]
             step_c = res.x[c_offset + i]
             step_g = res.x[g_offset + i]
+            step_dh = abs(res.x[dh_offset + i])
             step_dg = abs(res.x[dg_offset + i])
 
             # Track dynamic acquisition cost based on interval charging flows
@@ -170,12 +178,21 @@ class LinearBatteryController(object):
             else:
                 state = "SELF_CONSUMPTION"
 
+            # Calculate actual bidirectional net grid flow predicted by the solver
+            # The continuous LP solver can mathematically 'degenerate' by simultaneously evaluating
+            # step_c and step_dh on the exact same interval to artificially minimize the objective boundary
+            # cost of step_g. Physical batteries cannot charge and discharge simultaneously.
+            net_grid_kwh = load_forecast[i] - pv_forecast[i]
+            if state == "CHARGE_GRID":
+                net_grid_kwh += step_c
+            else:
+                net_grid_kwh += step_c - step_dh - step_dg
+
             sequence.append(
                 {
                     "target_soc": (step_b / capacity) * 100.0,
                     "state": state,
-                    "grid_import": step_g * (60.0 / 5.0),
-                    "grid_export": step_dg * (60.0 / 5.0),
+                    "net_grid": net_grid_kwh * (60.0 / 5.0),
                     "load": load_forecast[i] * (60.0 / 5.0),
                     "pv": pv_forecast[i] * (60.0 / 5.0),
                     "import_price": price_buy[i],

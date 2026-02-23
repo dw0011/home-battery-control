@@ -230,8 +230,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             if future_plan and 0 <= idx < len(future_plan):
                 state = future_plan[idx].get("state", "UNKNOWN")
                 target_soc = future_plan[idx].get("target_soc", simulated_soc)
-                grid_import = future_plan[idx].get("grid_import", 0.0)
-                grid_export_kw = future_plan[idx].get("grid_export", 0.0)
+                net_grid_kw = future_plan[idx].get("net_grid", 0.0)
                 pv_kw_avg = future_plan[idx].get("pv", 0.0)
                 load_kw_avg = future_plan[idx].get("load", 0.0)
                 price = future_plan[idx].get(
@@ -243,15 +242,15 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 acq_cost = future_plan[idx].get("acquisition_cost", 0.0)
 
                 # Directly calculate programmatic cost from FSM matrices, omitting physics hallucination
-                interval_cost = (grid_import * duration_hours * price) - (
-                    grid_export_kw * duration_hours * export_price
-                )
+                if net_grid_kw > 0:
+                    interval_cost = net_grid_kw * duration_hours * price
+                else:
+                    interval_cost = net_grid_kw * duration_hours * export_price
 
             else:
                 state = "SELF_CONSUMPTION"
                 target_soc = simulated_soc
-                grid_import = 0.0
-                grid_export_kw = 0.0
+                net_grid_kw = 0.0
                 pv_kw_avg = 0.0
                 load_kw_avg = 0.0
                 price = rate.get("import_price", rate.get("price", 0.0))
@@ -271,14 +270,11 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
 
                 # Grid Impact = Load - PV + Battery Charge
                 interval_kwh = load_kwh - pv_kwh + battery_kwh
+                net_grid_kw = interval_kwh / duration_hours if duration_hours > 0 else 0.0
                 if interval_kwh < 0:
                     interval_cost = interval_kwh * export_price
-                    grid_export_kw = (
-                        abs(interval_kwh) / duration_hours if duration_hours > 0 else 0.0
-                    )
                 else:
                     interval_cost = interval_kwh * price
-                    grid_import = interval_kwh / duration_hours if duration_hours > 0 else 0.0
 
             limit_pct = 100.0 if state != "SELF_CONSUMPTION" else 0.0
 
@@ -294,7 +290,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     "Export Rate": f"{export_price:.2f}",
                     "FSM State": state,
                     "Inverter Limit": f"{limit_pct:.0f}%",
-                    "Grid Imp": f"{grid_import:.2f}",
+                    "Net Grid": f"{net_grid_kw:.2f}",
                     "PV Forecast": f"{pv_kw_avg:.2f}",
                     "Load Forecast": f"{load_kw_avg:.2f}",
                     "Air Temp Forecast": f"{temp_c:.1f}°C" if temp_c is not None else "—",

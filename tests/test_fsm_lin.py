@@ -75,10 +75,14 @@ def test_inverter_physical_bounds_limit_kw(base_context):
     """Test 3: Assert the system physically clamps the charging/discharging limit_kw."""
     # Create an extreme scenario that mathematically suggests massive charge rate
     for i in range(28):
-        base_context.forecast_price[i]["import_price"] = -100.0  # getting paid to charge
-        base_context.forecast_price[i]["export_price"] = -100.0
+        base_context.forecast_price[i]["import_price"] = 0.05
+        base_context.forecast_price[i]["export_price"] = 0.05
         base_context.forecast_load[i]["kw"] = 0.0
         base_context.forecast_solar[i]["kw"] = 0.0
+
+    # Make strictly step 0 the cheapest so the LP solves deterministically
+    base_context.forecast_price[0]["import_price"] = 0.01
+    base_context.forecast_price[0]["export_price"] = 0.01
 
     # Must have a future positive price to make holding it worthwhile
     base_context.forecast_price[20]["import_price"] = 100.0
@@ -87,7 +91,7 @@ def test_inverter_physical_bounds_limit_kw(base_context):
     # Force a load right now so grid importing is mandatory regardless of solver arbitrage scaling
     base_context.forecast_load[0]["kw"] = 5.0
 
-    base_context.soc = 10.0
+    base_context.soc = 0.0
     base_context.config["battery_rate_max"] = 5.0  # strictly clamp physical battery limit
 
     fsm = LinearBatteryStateMachine()

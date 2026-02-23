@@ -28,7 +28,7 @@ REQUIRED_PLAN_COLUMNS = [
     "Export Rate",
     "FSM State",
     "Inverter Limit",
-    "Grid Imp",
+    "Net Grid",
     "PV Forecast",
     "Load Forecast",
     "Air Temp Forecast",

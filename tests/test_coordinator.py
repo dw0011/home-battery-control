@@ -474,8 +474,7 @@ def test_plan_table_interval_cost_calculation():
             "target_soc": 50.0,
             "load": 4.0,
             "pv": 2.0,
-            "grid_import": 2.0,
-            "grid_export": 0.0,
+            "net_grid": 2.0,
             "import_price": 0.20,
             "export_price": 0.05,
         }

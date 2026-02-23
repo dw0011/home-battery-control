@@ -400,8 +400,8 @@ async def test_load_matches_average_24hr_forecast(mock_hass):
 
     # Load JSON files
     base_dir = os.path.dirname(os.path.dirname(__file__))
-    history_path = os.path.join(base_dir, "load_history.json")
-    forecast_path = os.path.join(base_dir, "average_24hr_forecast.json")
+    history_path = os.path.join(base_dir, "archive", "load_history.json")
+    forecast_path = os.path.join(base_dir, "archive", "average_24hr_forecast.json")
 
     with open(history_path, "r") as f:
         history_raw = json.load(f)
