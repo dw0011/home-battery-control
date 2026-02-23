@@ -84,6 +84,9 @@ def test_inverter_physical_bounds_limit_kw(base_context):
     base_context.forecast_price[20]["import_price"] = 100.0
     base_context.forecast_load[20]["kw"] = 5.0
 
+    # Force a load right now so grid importing is mandatory regardless of solver arbitrage scaling
+    base_context.forecast_load[0]["kw"] = 5.0
+
     base_context.soc = 10.0
     base_context.config["battery_rate_max"] = 5.0  # strictly clamp physical battery limit
 

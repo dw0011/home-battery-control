@@ -7,6 +7,8 @@ This workflow automates the process of updating the House Battery Control integr
 If you are asked to execute this workflow, you should start the `browser_subagent` tool with the following task instructions:
 
 ```
+CRITICAL INSTRUCTION: The Home Assistant server is on the local network and responds instantly. DO NOT use artificial wait or sleep commands. Execute actions as quickly as the DOM allows.
+
 Execute the update-ha workflow:
 1. Navigate to http://homeassistant.local:8123/hacs/dashboard
 2. Search for "home battery" in the UI search bar

@@ -249,13 +249,6 @@ class LinearBatteryStateMachine(BatteryStateMachine):
         load_f = [kw * (5.0 / 60.0) for kw in load_f]
         pv_f = [kw * (5.0 / 60.0) for kw in pv_f]
 
-        # Splice current instantaneous context into the first array slot (T=0)
-        # Using integration footprint compatible with base BatteryStateMachine
-        current_load_kwh = context.load_power * (5.0 / 60.0)
-        current_pv_kwh = context.solar_production * (5.0 / 60.0)
-        load_f[0] = current_load_kwh
-        pv_f[0] = current_pv_kwh
-
         capacity = max(
             13.5, context.config.get("battery_capacity", context.config.get("capacity_kwh", 27.0))
         )
