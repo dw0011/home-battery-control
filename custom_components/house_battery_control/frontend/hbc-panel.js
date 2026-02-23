@@ -205,7 +205,7 @@ class HBCPanel extends LitElement {
       "Export",
       "State",
       "Limit",
-      "Grid Imp",
+      "Net Grid",
       "PV",
       "Load",
       "Temp",
@@ -246,7 +246,7 @@ class HBCPanel extends LitElement {
           exp: r["Export Rate"] || "0.0",
           state: r["FSM State"] || "—",
           limit: r["Inverter Limit"] || "0%",
-          grid: r["Grid Imp"] || "0.00",
+          grid: r["Net Grid"] || "0.00",
           pv: r["PV Forecast"] || "0.00",
           ld: r["Load Forecast"] || "0.00",
           temp: r["Air Temp Forecast"] || "—",
@@ -290,7 +290,7 @@ class HBCPanel extends LitElement {
             limit = dischargeReq["Inverter Limit"] || "100%";
           }
 
-          const grid = (chunk.reduce((s, row) => s + parseNum(row["Grid Imp"]), 0) / chunk.length).toFixed(2);
+          const grid = (chunk.reduce((s, row) => s + parseNum(row["Net Grid"]), 0) / chunk.length).toFixed(2);
           const pv = (chunk.reduce((s, row) => s + parseNum(row["PV Forecast"]), 0) / chunk.length).toFixed(2);
           const ld = (chunk.reduce((s, row) => s + parseNum(row["Load Forecast"]), 0) / chunk.length).toFixed(2);
           const tempNum = (chunk.reduce((s, row) => s + parseNum(row["Air Temp Forecast"]), 0) / chunk.length).toFixed(1);
@@ -373,7 +373,7 @@ class HBCPanel extends LitElement {
         "Export": r.exp,
         "State": r.state,
         "Limit": r.limit,
-        "Grid Imp": r.grid,
+        "Net Grid": r.grid,
         "PV": r.pv,
         "Load": r.ld,
         "Temp": r.temp,
