@@ -13,6 +13,7 @@ class HBCPanel extends LitElement {
       _activeTab: { type: String },
       _planResolution: { type: String },
       _hiddenCols: { type: Array },
+      _sensorsHidden: { type: Boolean },
       _data: { type: Object },
       _error: { type: String },
       _loading: { type: Boolean },
@@ -24,6 +25,7 @@ class HBCPanel extends LitElement {
     this._activeTab = "dashboard";
     this._planResolution = "30min";
     this._hiddenCols = JSON.parse(localStorage.getItem("hbc_hidden_cols") || "[]");
+    this._sensorsHidden = localStorage.getItem("hbc_sensors_hidden") === "true";
     this._data = {};
     this._error = "";
     this._loading = true;
@@ -72,6 +74,11 @@ class HBCPanel extends LitElement {
     localStorage.setItem("hbc_hidden_cols", JSON.stringify(hidden));
   }
 
+  _toggleSensors() {
+    this._sensorsHidden = !this._sensorsHidden;
+    localStorage.setItem("hbc_sensors_hidden", this._sensorsHidden);
+  }
+
   // ── Dashboard Tab ──────────────────────────────────────
   _renderDashboard() {
     const d = this._data;
@@ -81,6 +88,8 @@ class HBCPanel extends LitElement {
     const load = d.load_power !== undefined ? d.load_power : 0;
     const battery = d.battery_power !== undefined ? d.battery_power : 0;
     const price = d.current_price !== undefined ? d.current_price : 0;
+    const import_today = d.import_today !== undefined ? d.import_today : 0;
+    const export_today = d.export_today !== undefined ? d.export_today : 0;
     const state = d.state || "IDLE";
     const reason = d.reason || "";
 
@@ -121,6 +130,14 @@ class HBCPanel extends LitElement {
             <div class="stat-label">Price c/kWh</div>
           </div>
           <div class="stat">
+            <div class="stat-value">${import_today}</div>
+            <div class="stat-label">Import kWh</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">${export_today}</div>
+            <div class="stat-label">Export kWh</div>
+          </div>
+          <div class="stat">
             <div class="state-badge">${state}</div>
             <div class="stat-label">${reason}</div>
           </div>
@@ -137,7 +154,15 @@ class HBCPanel extends LitElement {
 
     return html`
       <div class="card">
-        <h2>Sensor Status</h2>
+        <h2 
+          @click=${this._toggleSensors} 
+          style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;"
+        >
+          Sensor Status
+          <span style="font-size: 0.8em; transform: rotate(${this._sensorsHidden ? '-90deg' : '0deg'}); transition: transform 0.2s;">▼</span>
+        </h2>
+        
+        ${this._sensorsHidden ? html`` : html`
         <table>
           <thead><tr><th>Entity</th><th>State</th><th>Status</th></tr></thead>
           <tbody>
@@ -156,6 +181,7 @@ class HBCPanel extends LitElement {
     )}
           </tbody>
         </table>
+        `}
         <div class="meta">
           Last update: ${this._data.last_update || "—"} |
           Update #${this._data.update_count || 0}
