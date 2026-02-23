@@ -130,12 +130,22 @@ def test_grid_power_with_inversion():
 
 
 def test_load_derivation_positive():
-    """load = solar + grid - battery should work correctly."""
-    solar_p = 4.0
-    grid_p = 1.0
-    battery_p = 2.0  # charging
-    load_p = solar_p + grid_p - battery_p
+    """Grid +2.0 (Import), Solar 0.0, Battery +1.0 (Discharge) -> Load = 3.0"""
+    solar_p = 0.0
+    grid_p = 2.0
+    battery_p = 1.0
+    load_p = solar_p + grid_p + battery_p
     assert load_p == 3.0
+
+
+def test_load_derivation_charging_battery():
+    """Test derivations: Load = Solar + Grid + Battery
+    Grid 0.0, Solar 4.0, Battery -2.5 (Charge) -> Load = 1.5"""
+    solar_p = 4.0
+    grid_p = 0.0
+    battery_p = -2.5
+    load_p = solar_p + grid_p + battery_p
+    assert load_p == 1.5
 
 
 def test_load_derivation_clamped_to_zero():

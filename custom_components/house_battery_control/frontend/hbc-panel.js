@@ -75,12 +75,12 @@ class HBCPanel extends LitElement {
   // ── Dashboard Tab ──────────────────────────────────────
   _renderDashboard() {
     const d = this._data;
-    const soc = (d.soc || 0).toFixed(0);
-    const solar = (d.solar_power || 0).toFixed(1);
-    const grid = (d.grid_power || 0).toFixed(1);
-    const load = (d.load_power || 0).toFixed(1);
-    const battery = (d.battery_power || 0).toFixed(1);
-    const price = (d.current_price || 0).toFixed(1);
+    const soc = d.soc !== undefined ? d.soc : 0;
+    const solar = d.solar_power !== undefined ? d.solar_power : 0;
+    const grid = d.grid_power !== undefined ? d.grid_power : 0;
+    const load = d.load_power !== undefined ? d.load_power : 0;
+    const battery = d.battery_power !== undefined ? d.battery_power : 0;
+    const price = d.current_price !== undefined ? d.current_price : 0;
     const state = d.state || "IDLE";
     const reason = d.reason || "";
 

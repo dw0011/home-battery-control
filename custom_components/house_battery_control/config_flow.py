@@ -38,6 +38,7 @@ from .const import (
     CONF_INVERTER_LIMIT_MAX,
     CONF_LOAD_HIGH_TEMP_THRESHOLD,
     CONF_LOAD_LOW_TEMP_THRESHOLD,
+    CONF_LOAD_POWER_ENTITY,
     CONF_LOAD_SENSITIVITY_HIGH_TEMP,
     CONF_LOAD_SENSITIVITY_LOW_TEMP,
     CONF_LOAD_TODAY_ENTITY,
@@ -134,6 +135,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         EntitySelectorConfig(domain="sensor")
                     ),
                     vol.Required(CONF_GRID_POWER_INVERT, default=True): BooleanSelector(),
+                    vol.Optional(CONF_LOAD_POWER_ENTITY): EntitySelector(
+                        EntitySelectorConfig(domain="sensor")
+                    ),
                 }
             ),
         )
@@ -295,6 +299,10 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Required(
                         CONF_GRID_POWER_INVERT, default=self._data.get(CONF_GRID_POWER_INVERT, True)
                     ): BooleanSelector(),
+                    vol.Optional(
+                        CONF_LOAD_POWER_ENTITY,
+                        description={"suggested_value": self._data.get(CONF_LOAD_POWER_ENTITY)},
+                    ): EntitySelector(EntitySelectorConfig(domain="sensor")),
                 }
             ),
         )

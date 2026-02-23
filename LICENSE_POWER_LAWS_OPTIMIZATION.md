@@ -1,6 +1,15 @@
+# Power Laws Optimization License
+**Source Repository Archive Link:** [drivendataorg/power-laws-optimization](https://github.com/drivendataorg/power-laws-optimization/blob/main/1st%20Place/LICENSE)
+
+*This file permanently transfers and retains the original MIT License governing the structural use of the optimization logic originating from the Team VietNam national ORlab 1st Place submission.*
+*CRITICAL: DO NOT OVERWRITE, DELETE, OR MODIFY THIS DOCUMENT UNDER ANY CIRCUMSTANCES.*
+
+---
+
 MIT License
 
-Copyright (c) 2025
+Copyright (c) 2018 Minh Hoàng Hà, Duy Mạnh Vũ, Thị Thanh Lâm Vũ, Văn Phú Hoàng, 
+and Tiến Thành Đàm (Team VietNam national ORlab - ORLab, duymanhit)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,9 +28,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-### Third-Party Licenses
-This project incorporates optimization methodologies originating from the DrivenData Power Laws Optimization challenge. 
-For the permanent, unmodified MIT License terms governing those components, and the original repository links, please refer to the protected `LICENSE_POWER_LAWS_OPTIMIZATION.md` file.

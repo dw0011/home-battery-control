@@ -26,6 +26,7 @@ from .const import (
     CONF_INVERTER_LIMIT_MAX,
     CONF_LOAD_HIGH_TEMP_THRESHOLD,
     CONF_LOAD_LOW_TEMP_THRESHOLD,
+    CONF_LOAD_POWER_ENTITY,
     CONF_LOAD_SENSITIVITY_HIGH_TEMP,
     CONF_LOAD_SENSITIVITY_LOW_TEMP,
     CONF_LOAD_TODAY_ENTITY,
@@ -341,10 +342,16 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             import_today = self._get_sensor_value(self.config.get(CONF_IMPORT_TODAY_ENTITY, ""))
             export_today = self._get_sensor_value(self.config.get(CONF_EXPORT_TODAY_ENTITY, ""))
 
-            # Derive House Load (Instantaneous)
-            # Load = Solar + Grid - Battery
-            # (Assumes Grid: + Import, Battery: + Charge)
-            load_p = solar_p + grid_p - battery_p
+            # Fetch Load Power gracefully
+            # Preferred: Dedicated sensor if configured by user
+            load_entity = self.config.get(CONF_LOAD_POWER_ENTITY, "")
+            if load_entity:
+                load_p = self._get_sensor_value(load_entity)
+            else:
+                # Fallback Derivation: Load = Solar + Grid + Battery
+                # (Assumes standard HA polarity: Grid + Import, Battery + Discharge)
+                load_p = solar_p + grid_p + battery_p
+
             if load_p < 0:
                 load_p = 0.0
 
