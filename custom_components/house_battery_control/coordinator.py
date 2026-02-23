@@ -230,6 +230,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 state = future_plan[idx].get("state", "UNKNOWN")
                 target_soc = future_plan[idx].get("target_soc", simulated_soc)
                 grid_import = future_plan[idx].get("grid_import", 0.0)
+                grid_export_kw = future_plan[idx].get("grid_export", 0.0)
                 pv_kw_avg = future_plan[idx].get("pv", 0.0)
                 load_kw_avg = future_plan[idx].get("load", 0.0)
                 price = future_plan[idx].get(
@@ -239,30 +240,46 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     "export_price", rate.get("export_price", price * 0.8)
                 )
                 acq_cost = future_plan[idx].get("acquisition_cost", 0.0)
+
+                # Directly calculate programmatic cost from FSM matrices, omitting physics hallucination
+                interval_cost = (grid_import * duration_hours * price / 100.0) - (
+                    grid_export_kw * duration_hours * export_price / 100.0
+                )
+
             else:
                 state = "SELF_CONSUMPTION"
                 target_soc = simulated_soc
                 grid_import = 0.0
+                grid_export_kw = 0.0
                 pv_kw_avg = 0.0
                 load_kw_avg = 0.0
                 price = rate.get("import_price", rate.get("price", 0.0))
                 export_price = rate.get("export_price", price * 0.8)
                 acq_cost = 0.0
 
+                # --- 5. Fallback Battery Physics ---
+                soc_delta = target_soc - simulated_soc
+                pv_kwh = pv_kw_avg * duration_hours
+                load_kwh = load_kw_avg * duration_hours
+
+                # Implement standard 95% efficiency buffer to physics math proxy
+                if soc_delta > 0:
+                    battery_kwh = ((soc_delta / 100.0) * capacity) / 0.95
+                else:
+                    battery_kwh = ((soc_delta / 100.0) * capacity) * 0.95
+
+                # Grid Impact = Load - PV + Battery Charge
+                interval_kwh = load_kwh - pv_kwh + battery_kwh
+                if interval_kwh < 0:
+                    interval_cost = interval_kwh * export_price / 100.0
+                    grid_export_kw = (
+                        abs(interval_kwh) / duration_hours if duration_hours > 0 else 0.0
+                    )
+                else:
+                    interval_cost = interval_kwh * price / 100.0
+                    grid_import = interval_kwh / duration_hours if duration_hours > 0 else 0.0
+
             limit_pct = 100.0 if state != "SELF_CONSUMPTION" else 0.0
-
-            # --- 5. Battery Physics ---
-            soc_delta = target_soc - simulated_soc
-            pv_kwh = pv_kw_avg * duration_hours
-            load_kwh = load_kw_avg * duration_hours
-            battery_kwh = (soc_delta / 100.0) * capacity
-
-            # Grid Impact = Load - PV + Battery Charge
-            interval_kwh = load_kwh - pv_kwh + battery_kwh
-            if interval_kwh < 0:
-                interval_cost = interval_kwh * export_price / 100.0
-            else:
-                interval_cost = interval_kwh * price / 100.0
 
             cumulative += interval_cost
 

@@ -157,6 +157,7 @@ class LinearBatteryController(object):
                     "target_soc": (step_b / capacity) * 100.0,
                     "state": state,
                     "grid_import": step_g * (60.0 / 5.0),
+                    "grid_export": step_dg * (60.0 / 5.0),
                     "load": load_forecast[i] * (60.0 / 5.0),
                     "pv": pv_forecast[i] * (60.0 / 5.0),
                     "import_price": price_buy[i],
