@@ -170,24 +170,64 @@ class HBCPanel extends LitElement {
       "Acq. Cost",
     ];
 
-    const rows = plan.map((r) => {
-      return {
-        time: r["Time"] || "—",
-        localTime: r["Local Time"] || "—",
-        imp: r["Import Rate"] || "0.0",
-        exp: r["Export Rate"] || "0.0",
-        state: r["FSM State"] || "—",
-        limit: r["Inverter Limit"] || "0%",
-        grid: r["Grid Imp"] || "0.00",
-        pv: r["PV Forecast"] || "0.00",
-        ld: r["Load Forecast"] || "0.00",
-        temp: r["Air Temp Forecast"] || "—",
-        soc: r["SoC Forecast"] || "—",
-        cost: r["Interval Cost"] || "$0.0000",
-        cumul: r["Cumul. Cost"] || "$0.0000",
-        acq: r["Acq. Cost"] || "0.0000",
-      };
-    });
+    const parseNum = (str) => parseFloat(String(str).replace(/[^0-9.-]+/g, "")) || 0;
+
+    const rows = [];
+    for (let i = 0; i < plan.length; i += 6) {
+      const chunk = plan.slice(i, i + 6);
+      if (chunk.length === 0) continue;
+
+      const time = chunk[0]["Time"] || "—";
+      const localTime = chunk[0]["Local Time"] || "—";
+
+      const imp = (chunk.reduce((s, r) => s + parseNum(r["Import Rate"]), 0) / chunk.length).toFixed(2);
+      const exp = (chunk.reduce((s, r) => s + parseNum(r["Export Rate"]), 0) / chunk.length).toFixed(2);
+
+      let state = "SELF_CONSUMPTION";
+      let limit = "0%";
+      const chargeReq = chunk.find(r => r["FSM State"] === "CHARGE_GRID");
+      const dischargeReq = chunk.find(r => r["FSM State"] === "DISCHARGE_GRID");
+
+      if (chargeReq) {
+        state = "CHARGE_GRID";
+        limit = chargeReq["Inverter Limit"] || "100%";
+      } else if (dischargeReq) {
+        state = "DISCHARGE_GRID";
+        limit = dischargeReq["Inverter Limit"] || "100%";
+      }
+
+      const grid = (chunk.reduce((s, r) => s + parseNum(r["Grid Imp"]), 0) / chunk.length).toFixed(2);
+      const pv = (chunk.reduce((s, r) => s + parseNum(r["PV Forecast"]), 0) / chunk.length).toFixed(2);
+      const ld = (chunk.reduce((s, r) => s + parseNum(r["Load Forecast"]), 0) / chunk.length).toFixed(2);
+      const tempNum = (chunk.reduce((s, r) => s + parseNum(r["Air Temp Forecast"]), 0) / chunk.length).toFixed(1);
+      const temp = chunk[0]["Air Temp Forecast"] === "—" ? "—" : `${tempNum}°C`;
+
+      const lastRow = chunk[chunk.length - 1];
+      const soc = lastRow["SoC Forecast"] || "—";
+
+      const costRaw = chunk.reduce((s, r) => s + parseNum(r["Interval Cost"]), 0);
+      const cost = "$" + costRaw.toFixed(4);
+
+      const cumul = lastRow["Cumul. Cost"] || "$0.0000";
+      const acq = (chunk.reduce((s, r) => s + parseNum(r["Acq. Cost"]), 0) / chunk.length).toFixed(4);
+
+      rows.push({
+        time,
+        localTime,
+        imp,
+        exp,
+        state,
+        limit,
+        grid,
+        pv,
+        ld,
+        temp,
+        soc,
+        cost,
+        cumul,
+        acq,
+      });
+    }
 
     return html`
       <div class="card table-card">
