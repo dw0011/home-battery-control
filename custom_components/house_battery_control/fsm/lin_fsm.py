@@ -161,6 +161,7 @@ class LinearBatteryController(object):
                     "pv": pv_forecast[i] * (60.0 / 5.0),
                     "import_price": price_buy[i],
                     "export_price": price_sell[i],
+                    "acquisition_cost": acquisition_cost,
                 }
             )
 

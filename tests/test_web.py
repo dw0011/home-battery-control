@@ -28,12 +28,14 @@ REQUIRED_PLAN_COLUMNS = [
     "Export Rate",
     "FSM State",
     "Inverter Limit",
+    "Grid Imp",
     "PV Forecast",
     "Load Forecast",
     "Air Temp Forecast",
     "SoC Forecast",
     "Interval Cost",
-    "Cumulative Total",
+    "Cumul. Cost",
+    "Acq. Cost",
 ]
 
 

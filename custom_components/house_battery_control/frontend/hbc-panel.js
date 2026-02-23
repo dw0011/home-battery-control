@@ -166,7 +166,8 @@ class HBCPanel extends LitElement {
       "Temp",
       "SoC",
       "Cost",
-      "Total",
+      "Cumul. Cost",
+      "Acq. Cost",
     ];
 
     const rows = plan.map((r) => {
@@ -183,7 +184,8 @@ class HBCPanel extends LitElement {
         temp: r["Air Temp Forecast"] || "—",
         soc: r["SoC Forecast"] || "—",
         cost: r["Interval Cost"] || "$0.0000",
-        total: r["Cumulative Total"] || "$0.00",
+        cumul: r["Cumul. Cost"] || "$0.0000",
+        acq: r["Acq. Cost"] || "0.0000",
       };
     });
 
@@ -213,7 +215,8 @@ class HBCPanel extends LitElement {
                     <td>${r.temp}</td>
                     <td>${r.soc}</td>
                     <td>${r.cost}</td>
-                    <td>${r.total}</td>
+                    <td>${r.cumul}</td>
+                    <td>${r.acq}</td>
                   </tr>
                 `
     )}

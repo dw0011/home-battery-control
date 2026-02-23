@@ -238,6 +238,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 export_price = future_plan[idx].get(
                     "export_price", rate.get("export_price", price * 0.8)
                 )
+                acq_cost = future_plan[idx].get("acquisition_cost", 0.0)
             else:
                 state = "SELF_CONSUMPTION"
                 target_soc = simulated_soc
@@ -246,6 +247,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 load_kw_avg = 0.0
                 price = rate.get("import_price", rate.get("price", 0.0))
                 export_price = rate.get("export_price", price * 0.8)
+                acq_cost = 0.0
 
             limit_pct = 100.0 if state != "SELF_CONSUMPTION" else 0.0
 
@@ -280,7 +282,8 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     "Air Temp Forecast": f"{temp_c:.1f}°C" if temp_c is not None else "—",
                     "SoC Forecast": f"{target_soc:.1f}%",
                     "Interval Cost": f"${interval_cost:.4f}",
-                    "Cumulative Total": f"${cumulative:.2f}",
+                    "Cumul. Cost": f"${cumulative:.4f}",
+                    "Acq. Cost": f"{acq_cost:.4f}",
                 }
             )
 
