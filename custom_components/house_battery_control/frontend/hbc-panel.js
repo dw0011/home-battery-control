@@ -192,14 +192,17 @@ class HBCPanel extends LitElement {
     const parseNum = (str) => parseFloat(String(str).replace(/[^0-9.-]+/g, "")) || 0;
 
     const formatCostStr = (valStr) => {
-      if (valStr === undefined || valStr === null) return "$0.000";
+      if (valStr === undefined || valStr === null) return "$0.00.0";
       const num = typeof valStr === "number" ? valStr : parseNum(valStr);
-      if (isNaN(num)) return "$0.000";
-      if (num === 0) return "$0.000";
+      if (isNaN(num)) return "$0.00.0";
+      if (num === 0) return "$0.00.0";
       const abs = Math.abs(num);
       const sign = num < 0 ? "-$" : "$";
       let str;
-      if (abs < 10) str = abs.toFixed(3);
+      if (abs < 10) {
+        const base = abs.toFixed(3); // e.g., "1.234"
+        str = base.slice(0, 4) + "." + base.slice(4); // "1.23" + "." + "4" => "1.23.4"
+      }
       else if (abs < 100) str = abs.toFixed(2);
       else if (abs < 1000) str = abs.toFixed(1);
       else str = abs.toFixed(0);
