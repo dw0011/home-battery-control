@@ -36,3 +36,5 @@ session_logs/
 # Misc
 New folder/
 *.log
+
+archive/
