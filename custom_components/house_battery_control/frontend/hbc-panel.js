@@ -191,6 +191,21 @@ class HBCPanel extends LitElement {
 
     const parseNum = (str) => parseFloat(String(str).replace(/[^0-9.-]+/g, "")) || 0;
 
+    const formatCostStr = (valStr) => {
+      if (valStr === undefined || valStr === null) return "$0.000";
+      const num = typeof valStr === "number" ? valStr : parseNum(valStr);
+      if (isNaN(num)) return "$0.000";
+      if (num === 0) return "$0.000";
+      const abs = Math.abs(num);
+      const sign = num < 0 ? "-$" : "$";
+      let str;
+      if (abs < 10) str = abs.toFixed(3);
+      else if (abs < 100) str = abs.toFixed(2);
+      else if (abs < 1000) str = abs.toFixed(1);
+      else str = abs.toFixed(0);
+      return sign + str;
+    };
+
     let rows = [];
 
     if (this._planResolution === "5min") {
@@ -207,9 +222,9 @@ class HBCPanel extends LitElement {
           ld: r["Load Forecast"] || "0.00",
           temp: r["Air Temp Forecast"] || "—",
           soc: r["SoC Forecast"] || "—",
-          cost: r["Interval Cost"] || "$0.0000",
-          cumul: r["Cumul. Cost"] || "$0.0000",
-          acq: r["Acq. Cost"] || "0.0000",
+          cost: formatCostStr(r["Interval Cost"]),
+          cumul: formatCostStr(r["Cumul. Cost"]),
+          acq: formatCostStr(r["Acq. Cost"]),
         };
       });
     } else {
@@ -256,10 +271,10 @@ class HBCPanel extends LitElement {
           const soc = lastRow["SoC Forecast"] || "—";
 
           const costRaw = chunk.reduce((s, row) => s + parseNum(row["Interval Cost"]), 0);
-          const cost = "$" + costRaw.toFixed(4);
+          const cost = formatCostStr(costRaw);
 
-          const cumul = lastRow["Cumul. Cost"] || "$0.0000";
-          const acq = (chunk.reduce((s, row) => s + parseNum(row["Acq. Cost"]), 0) / chunk.length).toFixed(4);
+          const cumul = formatCostStr(lastRow["Cumul. Cost"]);
+          const acq = formatCostStr(chunk.reduce((s, row) => s + parseNum(row["Acq. Cost"]), 0) / chunk.length);
 
           rows.push({
             time,
