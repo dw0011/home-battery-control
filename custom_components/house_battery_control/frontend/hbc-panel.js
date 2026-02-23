@@ -323,7 +323,7 @@ class HBCPanel extends LitElement {
           ${cols.map(c => html`
             <button
               class="${this._hiddenCols.includes(c) ? '' : 'active'}"
-              style="background: ${this._hiddenCols.includes(c) ? 'transparent' : 'var(--primary-color)'}; color: ${this._hiddenCols.includes(c) ? 'var(--primary-text-color)' : 'white'}; border: 1px solid var(--primary-color); border-radius: 4px; padding: 4px 8px; font-size: 0.8em; cursor: pointer; opacity: ${this._hiddenCols.includes(c) ? '0.6' : '1'}; transition: 0.2s ease;"
+              style="background: ${this._hiddenCols.includes(c) ? 'transparent' : 'var(--primary-color)'}; color: ${this._hiddenCols.includes(c) ? 'inherit' : 'var(--text-primary-color, white)'}; border: 1px solid ${this._hiddenCols.includes(c) ? 'var(--divider-color, rgba(150,150,150,0.4))' : 'var(--primary-color)'}; border-radius: 4px; padding: 4px 8px; font-size: 0.8em; cursor: pointer; opacity: ${this._hiddenCols.includes(c) ? '0.5' : '1'}; transition: 0.2s ease;"
               @click=${() => this._toggleCol(c)}
             >
               ${c}
