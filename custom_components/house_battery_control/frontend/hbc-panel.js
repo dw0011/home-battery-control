@@ -12,6 +12,7 @@ class HBCPanel extends LitElement {
       panel: { type: Object },
       _activeTab: { type: String },
       _planResolution: { type: String },
+      _hiddenCols: { type: Array },
       _data: { type: Object },
       _error: { type: String },
       _loading: { type: Boolean },
@@ -22,6 +23,7 @@ class HBCPanel extends LitElement {
     super();
     this._activeTab = "dashboard";
     this._planResolution = "30min";
+    this._hiddenCols = JSON.parse(localStorage.getItem("hbc_hidden_cols") || "[]");
     this._data = {};
     this._error = "";
     this._loading = true;
@@ -57,6 +59,17 @@ class HBCPanel extends LitElement {
 
   _switchResolution(res) {
     this._planResolution = res;
+  }
+
+  _toggleCol(col) {
+    let hidden = [...this._hiddenCols];
+    if (hidden.includes(col)) {
+      hidden = hidden.filter(c => c !== col);
+    } else {
+      hidden.push(col);
+    }
+    this._hiddenCols = hidden;
+    localStorage.setItem("hbc_hidden_cols", JSON.stringify(hidden));
   }
 
   // ── Dashboard Tab ──────────────────────────────────────
@@ -287,34 +300,51 @@ class HBCPanel extends LitElement {
             </button>
           </div>
         </div>
+        
+        <div class="column-toggles" style="display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 12px;">
+          ${cols.map(c => html`
+            <button
+              class="${this._hiddenCols.includes(c) ? '' : 'active'}"
+              style="background: ${this._hiddenCols.includes(c) ? 'transparent' : 'var(--primary-color)'}; color: ${this._hiddenCols.includes(c) ? 'var(--primary-text-color)' : 'white'}; border: 1px solid var(--primary-color); border-radius: 4px; padding: 4px 8px; font-size: 0.8em; cursor: pointer; opacity: ${this._hiddenCols.includes(c) ? '0.6' : '1'}; transition: 0.2s ease;"
+              @click=${() => this._toggleCol(c)}
+            >
+              ${c}
+            </button>
+          `)}
+        </div>
+
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                ${cols.map((c) => html`<th>${c}</th>`)}
+                ${cols.filter(c => !this._hiddenCols.includes(c)).map((c) => html`<th>${c}</th>`)}
               </tr>
             </thead>
             <tbody>
-              ${rows.map(
-      (r) => html`
+              ${rows.map((r) => {
+      const colKeys = {
+        "Time": r.time,
+        "Local Time": r.localTime,
+        "Import": r.imp,
+        "Export": r.exp,
+        "State": r.state,
+        "Limit": r.limit,
+        "Grid Imp": r.grid,
+        "PV": r.pv,
+        "Load": r.ld,
+        "Temp": r.temp,
+        "SoC": r.soc,
+        "Cost": r.cost,
+        "Cumul. Cost": r.cumul,
+        "Acq. Cost": r.acq,
+      };
+
+      return html`
                   <tr class="${r.state === 'SELF_CONSUMPTION' ? 'state-self' : r.state === 'CHARGE_GRID' ? 'state-charge' : r.state === 'DISCHARGE_GRID' ? 'state-discharge' : ''}">
-                    <td>${r.time}</td>
-                    <td>${r.localTime}</td>
-                    <td>${r.imp}</td>
-                    <td>${r.exp}</td>
-                    <td>${r.state}</td>
-                    <td>${r.limit}</td>
-                    <td>${r.grid}</td>
-                    <td>${r.pv}</td>
-                    <td>${r.ld}</td>
-                    <td>${r.temp}</td>
-                    <td>${r.soc}</td>
-                    <td>${r.cost}</td>
-                    <td>${r.cumul}</td>
-                    <td>${r.acq}</td>
+                    ${cols.filter(c => !this._hiddenCols.includes(c)).map(c => html`<td>${colKeys[c]}</td>`)}
                   </tr>
-                `
-    )}
+                `;
+    })}
             </tbody>
           </table>
         </div>
