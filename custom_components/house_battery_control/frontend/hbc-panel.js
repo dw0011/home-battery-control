@@ -11,6 +11,7 @@ class HBCPanel extends LitElement {
       narrow: { type: Boolean },
       panel: { type: Object },
       _activeTab: { type: String },
+      _planResolution: { type: String },
       _data: { type: Object },
       _error: { type: String },
       _loading: { type: Boolean },
@@ -20,6 +21,7 @@ class HBCPanel extends LitElement {
   constructor() {
     super();
     this._activeTab = "dashboard";
+    this._planResolution = "30min";
     this._data = {};
     this._error = "";
     this._loading = true;
@@ -51,6 +53,10 @@ class HBCPanel extends LitElement {
 
   _switchTab(tab) {
     this._activeTab = tab;
+  }
+
+  _switchResolution(res) {
+    this._planResolution = res;
   }
 
   // ── Dashboard Tab ──────────────────────────────────────
@@ -172,66 +178,115 @@ class HBCPanel extends LitElement {
 
     const parseNum = (str) => parseFloat(String(str).replace(/[^0-9.-]+/g, "")) || 0;
 
-    const rows = [];
-    for (let i = 0; i < plan.length; i += 6) {
-      const chunk = plan.slice(i, i + 6);
-      if (chunk.length === 0) continue;
+    let rows = [];
 
-      const time = chunk[0]["Time"] || "—";
-      const localTime = chunk[0]["Local Time"] || "—";
-
-      const imp = (chunk.reduce((s, r) => s + parseNum(r["Import Rate"]), 0) / chunk.length).toFixed(2);
-      const exp = (chunk.reduce((s, r) => s + parseNum(r["Export Rate"]), 0) / chunk.length).toFixed(2);
-
-      let state = "SELF_CONSUMPTION";
-      let limit = "0%";
-      const chargeReq = chunk.find(r => r["FSM State"] === "CHARGE_GRID");
-      const dischargeReq = chunk.find(r => r["FSM State"] === "DISCHARGE_GRID");
-
-      if (chargeReq) {
-        state = "CHARGE_GRID";
-        limit = chargeReq["Inverter Limit"] || "100%";
-      } else if (dischargeReq) {
-        state = "DISCHARGE_GRID";
-        limit = dischargeReq["Inverter Limit"] || "100%";
-      }
-
-      const grid = (chunk.reduce((s, r) => s + parseNum(r["Grid Imp"]), 0) / chunk.length).toFixed(2);
-      const pv = (chunk.reduce((s, r) => s + parseNum(r["PV Forecast"]), 0) / chunk.length).toFixed(2);
-      const ld = (chunk.reduce((s, r) => s + parseNum(r["Load Forecast"]), 0) / chunk.length).toFixed(2);
-      const tempNum = (chunk.reduce((s, r) => s + parseNum(r["Air Temp Forecast"]), 0) / chunk.length).toFixed(1);
-      const temp = chunk[0]["Air Temp Forecast"] === "—" ? "—" : `${tempNum}°C`;
-
-      const lastRow = chunk[chunk.length - 1];
-      const soc = lastRow["SoC Forecast"] || "—";
-
-      const costRaw = chunk.reduce((s, r) => s + parseNum(r["Interval Cost"]), 0);
-      const cost = "$" + costRaw.toFixed(4);
-
-      const cumul = lastRow["Cumul. Cost"] || "$0.0000";
-      const acq = (chunk.reduce((s, r) => s + parseNum(r["Acq. Cost"]), 0) / chunk.length).toFixed(4);
-
-      rows.push({
-        time,
-        localTime,
-        imp,
-        exp,
-        state,
-        limit,
-        grid,
-        pv,
-        ld,
-        temp,
-        soc,
-        cost,
-        cumul,
-        acq,
+    if (this._planResolution === "5min") {
+      rows = plan.map((r) => {
+        return {
+          time: r["Time"] || "—",
+          localTime: r["Local Time"] || "—",
+          imp: r["Import Rate"] || "0.0",
+          exp: r["Export Rate"] || "0.0",
+          state: r["FSM State"] || "—",
+          limit: r["Inverter Limit"] || "0%",
+          grid: r["Grid Imp"] || "0.00",
+          pv: r["PV Forecast"] || "0.00",
+          ld: r["Load Forecast"] || "0.00",
+          temp: r["Air Temp Forecast"] || "—",
+          soc: r["SoC Forecast"] || "—",
+          cost: r["Interval Cost"] || "$0.0000",
+          cumul: r["Cumul. Cost"] || "$0.0000",
+          acq: r["Acq. Cost"] || "0.0000",
+        };
       });
+    } else {
+      let currentChunk = [];
+      for (let i = 0; i < plan.length; i++) {
+        const r = plan[i];
+        currentChunk.push(r);
+
+        const timeStr = r["Time"] || "";
+        const isBoundary = timeStr.endsWith(":25") || timeStr.endsWith(":55");
+        const isLast = i === plan.length - 1;
+
+        if (isBoundary || isLast) {
+          const chunk = currentChunk;
+          currentChunk = [];
+          if (chunk.length === 0) continue;
+
+          const time = chunk[0]["Time"] || "—";
+          const localTime = chunk[0]["Local Time"] || "—";
+
+          const imp = (chunk.reduce((s, row) => s + parseNum(row["Import Rate"]), 0) / chunk.length).toFixed(2);
+          const exp = (chunk.reduce((s, row) => s + parseNum(row["Export Rate"]), 0) / chunk.length).toFixed(2);
+
+          let state = "SELF_CONSUMPTION";
+          let limit = "0%";
+          const chargeReq = chunk.find(row => row["FSM State"] === "CHARGE_GRID");
+          const dischargeReq = chunk.find(row => row["FSM State"] === "DISCHARGE_GRID");
+
+          if (chargeReq) {
+            state = "CHARGE_GRID";
+            limit = chargeReq["Inverter Limit"] || "100%";
+          } else if (dischargeReq) {
+            state = "DISCHARGE_GRID";
+            limit = dischargeReq["Inverter Limit"] || "100%";
+          }
+
+          const grid = (chunk.reduce((s, row) => s + parseNum(row["Grid Imp"]), 0) / chunk.length).toFixed(2);
+          const pv = (chunk.reduce((s, row) => s + parseNum(row["PV Forecast"]), 0) / chunk.length).toFixed(2);
+          const ld = (chunk.reduce((s, row) => s + parseNum(row["Load Forecast"]), 0) / chunk.length).toFixed(2);
+          const tempNum = (chunk.reduce((s, row) => s + parseNum(row["Air Temp Forecast"]), 0) / chunk.length).toFixed(1);
+          const temp = chunk[0]["Air Temp Forecast"] === "—" ? "—" : `${tempNum}°C`;
+
+          const lastRow = chunk[chunk.length - 1];
+          const soc = lastRow["SoC Forecast"] || "—";
+
+          const costRaw = chunk.reduce((s, row) => s + parseNum(row["Interval Cost"]), 0);
+          const cost = "$" + costRaw.toFixed(4);
+
+          const cumul = lastRow["Cumul. Cost"] || "$0.0000";
+          const acq = (chunk.reduce((s, row) => s + parseNum(row["Acq. Cost"]), 0) / chunk.length).toFixed(4);
+
+          rows.push({
+            time,
+            localTime,
+            imp,
+            exp,
+            state,
+            limit,
+            grid,
+            pv,
+            ld,
+            temp,
+            soc,
+            cost,
+            cumul,
+            acq,
+          });
+        }
+      }
     }
 
     return html`
       <div class="card table-card">
-        <h2>24-Hour Plan</h2>
+        <div class="header" style="margin-bottom: 12px;">
+          <h2 style="margin-bottom: 0;">24-Hour Plan</h2>
+          <div class="tabs">
+            <button
+              class="${this._planResolution === "5min" ? "active" : ""}"
+              @click=${() => this._switchResolution("5min")}
+            >
+              5 Min
+            </button>
+            <button
+              class="${this._planResolution === "30min" ? "active" : ""}"
+              @click=${() => this._switchResolution("30min")}
+            >
+              30 Min
+            </button>
+          </div>
+        </div>
         <div class="table-wrap">
           <table>
             <thead>
