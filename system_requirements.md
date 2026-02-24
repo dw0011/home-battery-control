@@ -21,18 +21,13 @@ The SciPy solver mathematically minimizes total daily cost by calculating 288 di
 ### 2.2. Web Interface (Custom Panel)
 The web interface must be implemented as an HA **custom panel** (`panel_custom`):
 -   **Technology**: LitElement web component.
--   **Data Source**: The panel fetches live data from `/hbc/api/status`.
--   **Views**: Dashboard (Power flow SVG + status) and Plan (24-hour look-ahead).
+-   **Authentication**: The panel and all `/hbc/*` API endpoints require admin-level authentication. The panel must pass the HA auth token via `Authorization: Bearer` header with every API request.
+-   **Data Source**: The panel fetches live data from `/hbc/api/status` using authenticated requests.
+-   **Views**: Dashboard (Power flow SVG + status).
 -   **Dashboard Precision**: Instantaneous metric cards strictly display raw float telemetry arrays from the API without arbitrary frontend truncating or rounding, except for mathematically constrained cost displays.
 -   **Cumulatives**: The underlying API's `import_today` and `export_today` statistics must render explicitly along the bottom of the dashboard `status-grid`.
 
-#### 2.2.1. Plan Table Data Interpolation
-*Note: The Plan Table (accessed via `/hbc/plan`) is maintained strictly for diagnostic purposes and will not be a part of the final production application. However, its contents must structurally and numerically match the exact internal FSM plan array from which all battery calculations are derived.*
 
-The internal Plan Table utilizes the **Amber Grid Tariff** array as its backbone. Because the tariff array generates mixed temporal intervals (e.g. initial 5-minute blocks changing to 30-minute blocks), all forecast data must be structurally mapped by **timestamp** rather than sequential index.
-- **PV Forecast (Solcast)**: Must be proportionally interpolated. If the estimate is an hourly sum, it must be divided to accurately reflect the row's physical duration (e.g., dividing by 12 for a 5-min row).
-- **Load Forecast**: Must be mapped by finding all forecast segments whose timestamps fall within the row's start and end times, outputting the average of the matched intervals.
-- **Weather Forecast**: Must be mapped to the closest matching record using the nearest-neighbor temporal difference.
 
 #### 2.2.2. Web Extensibility Elements
 - **Table Column Toggling**: Users can dynamically filter or hide irrelevant columns from the 24-hour plan view. This boolean visibility array is implicitly persisted via the browser's `localStorage` to survive refreshes.
@@ -40,10 +35,10 @@ The internal Plan Table utilizes the **Amber Grid Tariff** array as its backbone
 - **Collapsible Sensor Status**: The explicit diagnostics list is capable of minimizing to free up vertical real estate, with its expanded/collapsed boolean firmly tracked via `localStorage`.
 
 ### 2.3. Web API Endpoints
--   **Status API** (`/hbc/api/status`): JSON with operational data + diagnostics.
--   **Config Export API** (`/hbc/api/config-yaml`): Returns the integration configuration as a valid YAML string. Must handle `MappingProxyType` correctly.
--   **Health Check** (`/hbc/api/ping`): `/hbc/api/ping`
--   **Historic Load API** (`/hbc/api/load-history`): JSON providing raw historic data and derived 5-minute power samples used for FSM alignment.
+-   **Status API** (`/hbc/api/status`): JSON with operational data + diagnostics. Requires admin auth.
+-   **Config Export API** (`/hbc/api/config-yaml`): Returns the integration configuration as a valid YAML string. Must handle `MappingProxyType` correctly. Requires admin auth.
+-   **Health Check** (`/hbc/api/ping`): Requires admin auth.
+-   **Historic Load API** (`/hbc/api/load-history`): JSON providing raw historic data and derived 5-minute power samples used for FSM alignment. Requires admin auth.
 
 ### 2.4. API Diagnostics (`/hbc/api/status`)
 The status API must return the **full coordinator data** for debugging:
@@ -142,8 +137,7 @@ The system calculates the required charging mathematics by computing optimizatio
 - The algorithm generates a `target_soc_perc` derived strictly from the engine's first 5-minute matrix output. This target is dynamically converted into physical `limit_kw` boundaries mapped directly against the physical constraints (27.0 kWh, 6.3 kW Charge Limit) to instruct the Home Assistant integration scripts.
 
 ### 4.2. UI & Web Endpoints Subsystems
-- **Dashboard (`/hbc`)**: Responds with a fully standalone HTML page utilizing vanilla CSS/Lit styles. Generates an embedded SVG displaying live graphical power nodes (Grid, Solar, Battery, Home) and their dynamic usage connections.
-- **Plan Table (`/hbc/plan`)**: Responds with an HTML table rendering the internal FSM JSON. Contains explicitly colored columns for `Local Time`, Import/Export rates, PV, Load, Target SoC, and Action. Limits display dynamically to Midnight-to-Midnight.
+- **Dashboard (`/hbc`)**: Responds with a fully standalone HTML page utilizing vanilla CSS/Lit styles. Generates an embedded SVG displaying live graphical power nodes (Grid, Solar, Battery, Home) and their dynamic usage connections. Requires admin auth.
 
 ### 4.3. Solcast PV Interpolation
 - Solcast provides energy-accumulated summaries by half-hour. The `SolcastSolar` manager forces linear interpolation over these spans, dividing total kWh into granular kW rates mapped purely to exact 5-minute `periodEnd` boundaries.

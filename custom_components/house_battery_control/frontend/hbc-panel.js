@@ -45,7 +45,16 @@ class HBCPanel extends LitElement {
 
   async _fetchData() {
     try {
-      const resp = await fetch("/hbc/api/status");
+      const token = this.hass && this.hass.auth && this.hass.auth.data
+        ? this.hass.auth.data.access_token
+        : null;
+      const headers = token ? { "Authorization": `Bearer ${token}` } : {};
+      const resp = await fetch("/hbc/api/status", { headers });
+      if (resp.status === 401) {
+        this._error = "Insufficient permissions — admin access required";
+        this._loading = false;
+        return;
+      }
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       this._data = await resp.json();
       this._error = "";

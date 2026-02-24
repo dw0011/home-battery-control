@@ -2,7 +2,7 @@
 
 Tests written FIRST per @speckit.implement TDD.
 Spec 2.2: Plan table columns.
-Spec 2.3: Authentication flags.
+Spec 2.3: Admin-only authentication.
 Spec 3.1: Separate import/export rates in plan table.
 """
 
@@ -46,13 +46,6 @@ def test_web_module_importable():
     assert HBCDashboardView is not None
 
 
-def test_web_has_plan_view():
-    """web.py should have a plan view class."""
-    from custom_components.house_battery_control.web import HBCPlanView
-
-    assert HBCPlanView is not None
-
-
 def test_web_has_api_status():
     """web.py should have a JSON API status view."""
     from custom_components.house_battery_control.web import HBCApiStatusView
@@ -67,22 +60,15 @@ def test_web_has_api_ping():
     assert HBCApiPingView is not None
 
 
-# --- Auth Flags (Spec 2.3 — Custom Panel) ---
-# All views are public; auth handled by HA frontend framework for the panel.
+# --- Auth Flags (Spec 2.3 — Admin-Only) ---
+# All views require admin auth; HA frontend framework enforces for the panel.
 
 
-def test_dashboard_is_public():
-    """Dashboard view must be public (spec 2.3 — panel handles auth)."""
+def test_dashboard_requires_auth():
+    """Dashboard view must require auth (FR-001)."""
     from custom_components.house_battery_control.web import HBCDashboardView
 
-    assert HBCDashboardView.requires_auth is False
-
-
-def test_plan_is_public():
-    """Plan view must be public."""
-    from custom_components.house_battery_control.web import HBCPlanView
-
-    assert HBCPlanView.requires_auth is False
+    assert HBCDashboardView.requires_auth is True
 
 
 @pytest.mark.asyncio
@@ -197,25 +183,25 @@ def test_js_plan_data_structures():
     assert "kw" in status["solar_forecast"][0]
 
 
-def test_api_status_is_public():
-    """API status must be public (spec 2.3 — consumed by panel JS)."""
+def test_api_status_requires_auth():
+    """API status must require auth (FR-001)."""
     from custom_components.house_battery_control.web import HBCApiStatusView
 
-    assert HBCApiStatusView.requires_auth is False
+    assert HBCApiStatusView.requires_auth is True
 
 
-def test_api_ping_public():
-    """Ping endpoint must be public (spec 2.3)."""
+def test_api_ping_requires_auth():
+    """Ping endpoint must require auth (FR-001)."""
     from custom_components.house_battery_control.web import HBCApiPingView
 
-    assert HBCApiPingView.requires_auth is False
+    assert HBCApiPingView.requires_auth is True
 
 
-def test_load_history_api_public():
-    """Load history API must be public."""
+def test_load_history_api_requires_auth():
+    """Load history API must require auth (FR-001)."""
     from custom_components.house_battery_control.web import HBCLoadHistoryView
 
-    assert HBCLoadHistoryView.requires_auth is False
+    assert HBCLoadHistoryView.requires_auth is True
 
 
 # --- Plan Table ---
@@ -532,22 +518,6 @@ def test_build_status_data_empty_input():
     assert status.get("sensors", []) == []
 
 
-def test_plan_html_includes_local_time_column():
-    """The /hbc/plan HTML view must render a 'Local Time' column header and cell data (Phase 14)."""
-    from custom_components.house_battery_control.web import HBCPlanView
-
-    view = HBCPlanView()
-
-    # The view iterates over a hardcoded column list to build HTML.
-    # Verify that "Local Time" is present in both the headers and row generators.
-    # We inspect the source code by calling the internal column list.
-    import inspect
-
-    source = inspect.getsource(view.get)
-
-    assert '"Local Time"' in source, (
-        "HBCPlanView.get() must include 'Local Time' in its column list"
-    )
 
 
 @pytest.mark.asyncio

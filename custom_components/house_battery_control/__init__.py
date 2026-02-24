@@ -18,7 +18,6 @@ from .web import (
     HBCConfigYamlView,
     HBCDashboardView,
     HBCLoadHistoryView,
-    HBCPlanView,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -60,9 +59,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.http.register_view(HBCConfigYamlView())
     hass.http.register_view(HBCLoadHistoryView())
 
-    # Legacy HTML views (kept for backward compat)
+    # HTML views
     hass.http.register_view(HBCDashboardView())
-    hass.http.register_view(HBCPlanView())
 
     # Register custom panel (spec 2.2)
     await hass.http.async_register_static_paths(
@@ -80,6 +78,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             sidebar_title="HBC",
             sidebar_icon="mdi:battery-charging",
             frontend_url_path="hbc-panel",
+            require_admin=True,
             config={
                 "_panel_custom": {
                     "name": "hbc-panel",

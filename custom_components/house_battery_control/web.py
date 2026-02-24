@@ -2,7 +2,6 @@
 
 Provides:
 - Dashboard view with power flow SVG + status
-- Plan table (24h look-ahead, 5-min intervals)
 - JSON API for status + health check
 
 Registers with HA's built-in aiohttp server via hass.http.register_view().
@@ -109,7 +108,7 @@ class HBCDashboardView(HomeAssistantView):
 
     url = "/hbc"
     name = "hbc:dashboard"
-    requires_auth = False
+    requires_auth = True
 
     @callback
     async def get(self, request: web.Request) -> web.Response:
@@ -141,7 +140,7 @@ nav {{ margin-bottom: 20px; }}
 nav a {{ color: #e94560; margin-right: 15px; text-decoration: none; }}
 nav a:hover {{ text-decoration: underline; }}
 </style></head><body>
-<nav><a href="/hbc">Dashboard</a> <a href="/hbc/plan">Plan</a></nav>
+<nav><a href="/hbc">Dashboard</a></nav>
 <h1>House Battery Control</h1>
 <div class="card">{svg}</div>
 <div class="card">
@@ -168,84 +167,6 @@ nav a:hover {{ text-decoration: underline; }}
         return {}
 
 
-class HBCPlanView(HomeAssistantView):
-    """24-hour plan table."""
-
-    url = "/hbc/plan"
-    name = "hbc:plan"
-    requires_auth = False
-
-    @callback
-    async def get(self, request: web.Request) -> web.Response:
-        hass = request.app["hass"]
-        data = self._get_coordinator_data(hass)
-        table = data.get("plan", [])
-
-        rows_html = ""
-        for row in table:
-            cells = "".join(
-                f"<td>{row[c]}</td>"
-                for c in [
-                    "Time",
-                    "Local Time",
-                    "Import Rate",
-                    "Export Rate",
-                    "FSM State",
-                    "Inverter Limit",
-                    "PV Forecast",
-                    "Load Forecast",
-                    "Air Temp Forecast",
-                    "SoC Forecast",
-                    "Interval Cost",
-                    "Cumulative Total",
-                ]
-            )
-            rows_html += f"<tr>{cells}</tr>\n"
-
-        headers = "".join(
-            f"<th>{c}</th>"
-            for c in [
-                "Time",
-                "Local Time",
-                "Import Rate",
-                "Export Rate",
-                "FSM State",
-                "Inverter Limit",
-                "PV Forecast",
-                "Load Forecast",
-                "Air Temp Forecast",
-                "SoC Forecast",
-                "Interval Cost",
-                "Cumulative Total",
-            ]
-        )
-
-        html = f"""<!DOCTYPE html>
-<html><head><title>HBC Plan</title>
-<style>
-body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 20px; background: #1a1a2e; color: #e0e0e0; }}
-h1 {{ color: #e94560; }}
-table {{ width: 100%; border-collapse: collapse; background: #16213e; border-radius: 8px; overflow: hidden; }}
-th {{ background: #0f3460; color: #e94560; padding: 10px 8px; text-align: left; font-size: 12px; }}
-td {{ padding: 8px; border-bottom: 1px solid #1a1a2e; font-size: 12px; }}
-tr:nth-child(even) {{ background: #1a2744; }}
-nav {{ margin-bottom: 20px; }}
-nav a {{ color: #e94560; margin-right: 15px; text-decoration: none; }}
-</style></head><body>
-<nav><a href="/hbc">Dashboard</a> <a href="/hbc/plan">Plan</a></nav>
-<h1>24-Hour Plan</h1>
-<table><thead><tr>{headers}</tr></thead><tbody>{rows_html}</tbody></table>
-</body></html>"""
-
-        return web.Response(text=html, content_type="text/html")
-
-    def _get_coordinator_data(self, hass) -> dict:
-        domain_data = hass.data.get(DOMAIN, {})
-        for entry_data in domain_data.values():
-            coord = entry_data.get("coordinator")
-            if coord and coord.data:
-                return coord.data
-        return {}
 
 
 class HBCApiStatusView(HomeAssistantView):
@@ -253,7 +174,7 @@ class HBCApiStatusView(HomeAssistantView):
 
     url = "/hbc/api/status"
     name = "hbc:api:status"
-    requires_auth = False
+    requires_auth = True
 
     async def get(self, request: web.Request) -> web.Response:
         hass = request.app["hass"]
@@ -275,7 +196,7 @@ class HBCApiPingView(HomeAssistantView):
 
     url = "/hbc/api/ping"
     name = "hbc:api:ping"
-    requires_auth = False
+    requires_auth = True
 
     async def get(self, request: web.Request) -> web.Response:
         return self.json({"status": "ok"})
@@ -286,7 +207,7 @@ class HBCConfigYamlView(HomeAssistantView):
 
     url = "/hbc/api/config-yaml"
     name = "hbc:api:config-yaml"
-    requires_auth = False
+    requires_auth = True
 
     async def get(self, request: web.Request) -> web.Response:
         hass = request.app["hass"]
@@ -308,7 +229,7 @@ class HBCLoadHistoryView(HomeAssistantView):
 
     url = "/hbc/api/load-history"
     name = "hbc:api:load-history"
-    requires_auth = False
+    requires_auth = True
 
     async def get(self, request: web.Request) -> web.Response:
         hass = request.app["hass"]

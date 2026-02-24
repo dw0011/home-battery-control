@@ -63,5 +63,4 @@ def test_web_views_importable():
         HBCApiPingView,
         HBCApiStatusView,
         HBCDashboardView,
-        HBCPlanView,
     )
