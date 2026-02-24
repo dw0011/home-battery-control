@@ -233,12 +233,10 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 net_grid_kw = future_plan[idx].get("net_grid", 0.0)
                 pv_kw_avg = future_plan[idx].get("pv", 0.0)
                 load_kw_avg = future_plan[idx].get("load", 0.0)
-                price = future_plan[idx].get(
-                    "import_price", rate.get("import_price", rate.get("price", 0.0))
-                )
-                export_price = future_plan[idx].get(
-                    "export_price", rate.get("export_price", price * 0.8)
-                )
+                # Use raw unaltered rates from the timeline for accurate UI reflection,
+                # ignoring the computationally clamped internal LP solver prices.
+                price = rate.get("import_price", rate.get("price", 0.0))
+                export_price = rate.get("export_price", price * 0.8)
                 acq_cost = future_plan[idx].get("acquisition_cost", 0.0)
 
                 # Use the FSM's computationally precise Net Grid value natively without overriding it.
@@ -409,7 +407,18 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     load_forecast.append({"kw": 0.0})
 
             # Build FSM context and run decision logic
-            current_price = self.rates.get_import_price_at(dt_util.now())
+            # Clamp negative import prices to 0.00 to prevent unbounded LP matrix arbitrage (FSM bug fix)
+            current_price = max(0.0, self.rates.get_import_price_at(dt_util.now()))
+
+            clamped_rates = []
+            for r in self.rates.get_rates():
+                rc = dict(r)
+                try:
+                    if float(str(rc.get("import_price", 0.0))) < 0.0:
+                        rc["import_price"] = 0.0
+                except (ValueError, TypeError):
+                    pass
+                clamped_rates.append(rc)
 
             fsm_context = FSMContext(
                 soc=soc,
@@ -419,7 +428,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 current_price=current_price,
                 forecast_solar=aligned_solar,
                 forecast_load=load_forecast,
-                forecast_price=self.rates.get_rates(),
+                forecast_price=clamped_rates,
                 config={
                     "capacity_kwh": self.config.get(CONF_BATTERY_CAPACITY, 27.0),
                     "charge_rate_max": self.config.get(CONF_BATTERY_CHARGE_RATE_MAX, 6.3),

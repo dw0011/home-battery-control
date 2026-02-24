@@ -420,6 +420,8 @@ async def test_coordinator_update_data_exception_recovery(mock_hass):
         coordinator.hass = mock_hass
         coordinator._update_count = 0
         coordinator.rates = MagicMock()
+        coordinator.rates.get_import_price_at.return_value = 10.0
+        coordinator.rates.get_rates.return_value = []
         coordinator.weather = MagicMock()
         coordinator.solar = AsyncMock()
         coordinator.load_predictor = AsyncMock()
