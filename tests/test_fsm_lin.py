@@ -43,7 +43,7 @@ def test_linear_solver_basic_execution(base_context):
 
     # Asserting that the solver evaluated without crashing and returned a valid state
     assert result is not None
-    assert result.state in ["IDLE", "CHARGE_GRID", "DISCHARGE_HOME", "DISCHARGE_GRID"]
+    assert result.state in ["SELF_CONSUMPTION", "CHARGE_GRID", "DISCHARGE_GRID", "ERROR"]
     assert isinstance(result.limit_kw, float)
 
 

@@ -30,6 +30,7 @@ from .const import (
     CONF_LOAD_SENSITIVITY_HIGH_TEMP,
     CONF_LOAD_SENSITIVITY_LOW_TEMP,
     CONF_LOAD_TODAY_ENTITY,
+    CONF_RESERVE_SOC,
     CONF_SCRIPT_CHARGE,
     CONF_SCRIPT_CHARGE_STOP,
     CONF_SCRIPT_DISCHARGE,
@@ -407,18 +408,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     load_forecast.append({"kw": 0.0})
 
             # Build FSM context and run decision logic
-            # Clamp negative import prices to 0.00 to prevent unbounded LP matrix arbitrage (FSM bug fix)
-            current_price = max(0.0, self.rates.get_import_price_at(dt_util.now()))
-
-            clamped_rates = []
-            for r in self.rates.get_rates():
-                rc = dict(r)
-                try:
-                    if float(str(rc.get("import_price", 0.0))) < 0.0:
-                        rc["import_price"] = 0.0
-                except (ValueError, TypeError):
-                    pass
-                clamped_rates.append(rc)
+            current_price = self.rates.get_import_price_at(dt_util.now())
 
             fsm_context = FSMContext(
                 soc=soc,
@@ -428,11 +418,12 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 current_price=current_price,
                 forecast_solar=aligned_solar,
                 forecast_load=load_forecast,
-                forecast_price=clamped_rates,
+                forecast_price=self.rates.get_rates(),
                 config={
                     "capacity_kwh": self.config.get(CONF_BATTERY_CAPACITY, 27.0),
-                    "charge_rate_max": self.config.get(CONF_BATTERY_CHARGE_RATE_MAX, 6.3),
-                    "inverter_limit_kw": self.config.get(CONF_INVERTER_LIMIT_MAX, 10.0),
+                    "battery_rate_max": self.config.get(CONF_BATTERY_CHARGE_RATE_MAX, 6.3),
+                    "inverter_limit": self.config.get(CONF_INVERTER_LIMIT_MAX, 10.0),
+                    "reserve_soc": self.config.get(CONF_RESERVE_SOC, 0.0),
                 },
                 acquisition_cost=0.06,  # Explicit fallback for Live HA integration
             )
