@@ -382,6 +382,8 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             # We must use nearest-neighbor O(N) alignment so the FSM solver doesn't shift the daylight hours.
             aligned_solar = []
             rates_timeline = self.rates.get_rates()
+            fallback_len = len(rates_timeline) if rates_timeline else 288
+            
             if rates_timeline and solar_forecast:
                 for rate in rates_timeline:
                     rate_start = rate["start"]
@@ -395,7 +397,16 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     else:
                         aligned_solar.append({"kw": 0.0})
             else:
-                aligned_solar = solar_forecast
+                # Provide a zeroed array of exact length to prevent FSM aborting via min(lengths)
+                aligned_solar = [{"kw": 0.0} for _ in range(fallback_len)]
+                
+            # Ensure load_forecast is populated to identical precision length
+            if not load_forecast:
+                load_forecast = [{"kw": 0.0} for _ in range(fallback_len)]
+            elif len(load_forecast) < fallback_len:
+                # Pad out truncated endpoints to prevent sequence breaks
+                for _ in range(fallback_len - len(load_forecast)):
+                    load_forecast.append({"kw": 0.0})
 
             # Build FSM context and run decision logic
             current_price = self.rates.get_import_price_at(dt_util.now())
