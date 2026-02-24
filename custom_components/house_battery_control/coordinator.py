@@ -241,7 +241,9 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 )
                 acq_cost = future_plan[idx].get("acquisition_cost", 0.0)
 
-                # Directly calculate programmatic cost from FSM matrices, omitting physics hallucination
+                # Use the FSM's computationally precise Net Grid value natively without overriding it.
+                # (The continuous degenerate constraint bug in lin_fsm.py has been resolved).
+
                 if net_grid_kw > 0:
                     interval_cost = net_grid_kw * duration_hours * price
                 else:
