@@ -29,6 +29,7 @@ CONF_LOAD_LOW_TEMP_THRESHOLD = "load_low_temp_threshold"  # e.g. 15C
 CONF_BATTERY_CAPACITY = "battery_capacity"
 CONF_BATTERY_CHARGE_RATE_MAX = "battery_rate_max"
 CONF_INVERTER_LIMIT_MAX = "inverter_limit"
+CONF_RESERVE_SOC = "reserve_soc"
 
 # Control (Teslemetry/PW)
 CONF_ALLOW_CHARGE_FROM_GRID_ENTITY = "allow_charge_entity"
@@ -44,6 +45,7 @@ CONF_SCRIPT_DISCHARGE_STOP = "script_discharge_stop"
 DEFAULT_BATTERY_CAPACITY = 27.0
 DEFAULT_BATTERY_RATE_MAX = 6.3
 DEFAULT_INVERTER_LIMIT = 10.0
+DEFAULT_RESERVE_SOC = 0.0
 DEFAULT_CURRENCY = "c/kWh"
 DEFAULT_SCAN_INTERVAL = 300
 # 5 minutes

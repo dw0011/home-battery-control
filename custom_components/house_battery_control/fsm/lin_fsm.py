@@ -1,176 +1,219 @@
+"""
+lin_fsm.py — LP FSM (SciPy HiGHS)
+===================================
+Implements all system requirements from specs/03-lp-fsm-system/system_requirements.md.
+34 tests across 6 suites verify compliance.
+"""
 try:
     from .base import BatteryStateMachine, FSMContext, FSMResult
 except ImportError:
     from base import BatteryStateMachine, FSMContext, FSMResult
+
 import logging
+import math
+import statistics
+
+import numpy as np
+from scipy.optimize import linprog
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class LinearBatteryController(object):
+# ---------------------------------------------------------------------------
+#  FakeBattery — §6 of system requirements
+# ---------------------------------------------------------------------------
+class FakeBattery:
+    """Lightweight battery model constructed from FSMContext config."""
+
+    def __init__(
+        self,
+        capacity: float,
+        current_charge: float,
+        charge_limit: float,
+        discharge_limit: float,
+        charging_efficiency: float = 0.95,
+        discharging_efficiency: float = 0.95,
+    ):
+        self.capacity = capacity
+        self.current_charge = current_charge          # fraction 0-1
+        self.charging_power_limit = charge_limit      # kW
+        self.discharging_power_limit = discharge_limit  # kW
+        self.charging_efficiency = charging_efficiency
+        self.discharging_efficiency = discharging_efficiency
+
+
+# ---------------------------------------------------------------------------
+#  LinearBatteryController — core LP solver (SciPy translation of GLOP source)
+# ---------------------------------------------------------------------------
+class LinearBatteryController:
+    """
+    Translates the original GLOP competition LP formulation into SciPy's linprog.
+
+    Variable layout (1D vector x):
+        g[0..N-1]   grid import          bounds: [0, ∞)
+        c[0..N-1]   battery charge       bounds: [0, charge_limit_kwh]
+        dh[0..N-1]  discharge to home    bounds: [-max_home_kwh, 0]
+        dg[0..N-1]  discharge to grid    bounds: [-max_grid_kwh, 0]
+        b[0..N]     battery state        bounds: [safe_lb, capacity]
+    """
+
     def __init__(self):
-        self.step = 288  # For 24 hour 5 min resolution
+        self.step = 288
 
     def propose_state_of_charge(
         self,
-        site_id,
-        timestamp,
-        battery,
-        actual_previous_load,
-        actual_previous_pv_production,
-        price_buy,
-        price_sell,
-        load_forecast,
-        pv_forecast,
-        acquisition_cost=0.0,
+        battery: FakeBattery,
+        price_buy: list[float],
+        price_sell: list[float],
+        load_forecast: list[float],
+        pv_forecast: list[float],
+        acquisition_cost: float = 0.0,
+        raw_acquisition_cost: float = 0.0,
+        reserve_soc: float = 0.0,
     ):
+        number_step = min(288, self.step)
 
-        self.step -= 1
-        if self.step == 1:
-            return 0
-        if self.step > 1:
-            number_step = min(288, self.step)
-
-        #
-        energy = [None] * number_step
-
-        for i in range(number_step):
-            # Energy array tracks net load requirements
-            energy[i] = load_forecast[i] - pv_forecast[i]
-        # battery
+        # --- Physical parameters ---
         capacity = battery.capacity
-        charging_efficiency = battery.charging_efficiency
-        discharging_efficiency = 1.0 / battery.discharging_efficiency
+        eta_in = battery.charging_efficiency
+        eta_out = 1.0 / battery.discharging_efficiency
         current = capacity * battery.current_charge
-        limit = battery.charging_power_limit
-        dis_limit = battery.discharging_power_limit
+        charge_limit = battery.charging_power_limit * (5.0 / 60.0)   # kW → kWh per step
+        dis_limit = battery.discharging_power_limit * (5.0 / 60.0)
 
-        # Convert kw limits to kwh limits per 5 min step
-        limit = limit * (5.0 / 60.0)
-        dis_limit = dis_limit * (5.0 / 60.0)
+        # --- Net energy requirement per step ---
+        energy = [load_forecast[i] - pv_forecast[i] for i in range(number_step)]
 
-        # Scipy linprog
-        import numpy as np
-        from scipy.optimize import linprog
-
-        # Define x vector structure:
-        # [grid(0..N-1), charge(0..N-1), dh(0..N-1), dg(0..N-1), battery(0..N)]
+        # --- Variable offsets ---
+        g_off = 0
+        c_off = number_step
+        dh_off = 2 * number_step
+        dg_off = 3 * number_step
+        b_off = 4 * number_step
         num_vars = 4 * number_step + (number_step + 1)
-        c = np.zeros(num_vars)
+
+        # --- Objective function (§7 of system requirements) ---
+        obj = np.zeros(num_vars)
         bounds = []
 
-        g_offset = 0
-        c_offset = number_step
-        dh_offset = 2 * number_step
-        dg_offset = 3 * number_step
-        b_offset = 4 * number_step
+        for i in range(number_step):
+            # Grid import: use raw price (can be negative = incentive to import)
+            # FR-001: Solver must see the economic benefit of negative import prices
+            # FR-002: Upper-bound g[i] during negative prices to prevent unbounded LP
+            obj[g_off + i] = price_buy[i]
+            if price_buy[i] < 0:
+                # Physical bound: can't import more than load + battery charge rate
+                max_import = load_forecast[i] + charge_limit
+                bounds.append((0.0, max_import))
+            else:
+                bounds.append((0.0, None))
 
         for i in range(number_step):
-            # Cost of grid import is precisely the purchase price.
-            # (Previously Pb - Ps, which assumed baseline grid flow was a sold asset).
-            c[g_offset + i] = price_buy[i]
-            bounds.append((0.0, None))
+            # Charge: opportunity cost = max(ε, sell_price) + tiebreaker — §7.2
+            obj[c_off + i] = max(0.001, price_sell[i]) + max(0.0, price_buy[i]) / 1000.0
+            bounds.append((0.0, charge_limit))
 
         for i in range(number_step):
-            # Charging from the grid is implicitly captured by `g`.
-            # Charging from PV prevents exporting it, losing Ps.
-            c[c_offset + i] = price_sell[i] + price_buy[i] / 1000.0
-            bounds.append((0.0, limit))
+            # Discharge to home: opportunity cost = max(ε, sell_price)
+            obj[dh_off + i] = max(0.001, price_sell[i])
+            max_home = max(0.0, energy[i])
+            bounds.append((-max_home, 0.0))
 
         for i in range(number_step):
-            # Discharging to the home reduces grid import `g`.
-            # `g` already natively saves `Pb`.
-            # We must set this to `Ps` offset so it balances the opportunity cost of not exporting.
-            c[dh_offset + i] = price_sell[i]
-            max_home_kwh = max(0.0, energy[i])
-            bounds.append((-max_home_kwh, 0.0))
+            # Discharge to grid: opportunity cost = max(ε, sell_price)
+            # FR-002: Lock grid discharge to zero when export is below raw acquisition cost
+            obj[dg_off + i] = max(0.001, price_sell[i])
+            if price_sell[i] < raw_acquisition_cost:
+                bounds.append((0.0, 0.0))  # Export unprofitable — gate closed
+            else:
+                max_home = max(0.0, energy[i])
+                max_grid = max(0.0, dis_limit - max_home)
+                bounds.append((-max_grid, 0.0))
 
-        for i in range(number_step):
-            c[dg_offset + i] = price_sell[i]
-            max_home_kwh = max(0.0, energy[i])
-            max_grid_kwh = max(0.0, dis_limit - max_home_kwh)
-            bounds.append((-max_grid_kwh, 0.0))
-
+        # Battery state bounds with dynamic feasibility gradient — §8
+        reserve_kwh = capacity * (reserve_soc / 100.0)
         for i in range(number_step + 1):
             if i == number_step:
-                # b[-1] coef
-                c[b_offset + i] = -max(0.001, acquisition_cost)
+                # Terminal valuation — §9
+                obj[b_off + i] = -max(0.001, acquisition_cost)
             else:
-                c[b_offset + i] = 0.0
-            bounds.append((0.0, capacity))
+                obj[b_off + i] = 0.0
+            physically_accessible = current + i * charge_limit * eta_in
+            safe_lb = min(reserve_kwh, physically_accessible)
+            bounds.append((safe_lb, capacity))
 
-        # Inequalities (a_ub @ x <= b_ub)
-        # grid[i] - charge[i] - dh[i] - dg[i] >= energy[i]
-        # Rewrite as: -grid[i] + charge[i] + dh[i] + dg[i] <= -energy[i]
+        # --- Inequality constraints: grid balance ---
+        # g[i] - c[i] - dh[i] - dg[i] >= energy[i]
+        # Rewrite: -g[i] + c[i] + dh[i] + dg[i] <= -energy[i]
         a_ub = np.zeros((number_step, num_vars))
         b_ub = np.zeros(number_step)
         for i in range(number_step):
-            a_ub[i, g_offset + i] = -1.0
-            a_ub[i, c_offset + i] = 1.0
-            a_ub[i, dh_offset + i] = 1.0
-            a_ub[i, dg_offset + i] = 1.0
+            a_ub[i, g_off + i] = -1.0
+            a_ub[i, c_off + i] = 1.0
+            a_ub[i, dh_off + i] = 1.0
+            a_ub[i, dg_off + i] = 1.0
             b_ub[i] = -energy[i]
 
-        # Equalities (a_eq @ x == b_eq)
-        # 1. b[0] == current
-        # 2. b[i+1] == b[i] + charge[i]*eff_in + dh[i]*eff_out + dg[i]*eff_out
-        # Rewrite 2 as: charge[i]*eff_in + dh[i]*eff_out + dg[i]*eff_out + b[i] - b[i+1] == 0
+        # --- Equality constraints: battery dynamics ---
+        # b[0] = current
+        # b[i+1] = b[i] + c[i]*eta_in + dh[i]*eta_out + dg[i]*eta_out
         a_eq = np.zeros((number_step + 1, num_vars))
         b_eq = np.zeros(number_step + 1)
 
-        a_eq[0, b_offset] = 1.0
+        a_eq[0, b_off] = 1.0
         b_eq[0] = current
 
         for i in range(number_step):
-            a_eq[i + 1, c_offset + i] = charging_efficiency
-            a_eq[i + 1, dh_offset + i] = discharging_efficiency
-            a_eq[i + 1, dg_offset + i] = discharging_efficiency
-            a_eq[i + 1, b_offset + i] = 1.0
-            a_eq[i + 1, b_offset + i + 1] = -1.0
+            a_eq[i + 1, c_off + i] = eta_in
+            a_eq[i + 1, dh_off + i] = eta_out
+            a_eq[i + 1, dg_off + i] = eta_out
+            a_eq[i + 1, b_off + i] = 1.0
+            a_eq[i + 1, b_off + i + 1] = -1.0
             b_eq[i + 1] = 0.0
 
-        # Solve
-        res = linprog(c, A_ub=a_ub, b_ub=b_ub, A_eq=a_eq, b_eq=b_eq, bounds=bounds, method="highs")
+        # --- Solve ---
+        res = linprog(obj, A_ub=a_ub, b_ub=b_ub, A_eq=a_eq, b_eq=b_eq,
+                      bounds=bounds, method="highs")
 
         if not res.success:
-            _LOGGER.warning("Linear solver could not find optimal solution: %s", res.message)
+            _LOGGER.warning("LP solver failed: %s", res.message)
             return battery.current_charge, 0.0, 0.0, 0.0, []
 
-        b_1 = res.x[b_offset + 1]
-        obj = res.fun
-        dh_0 = abs(res.x[dh_offset])
-        dg_0 = abs(res.x[dg_offset])
+        # --- Extract first-step outputs ---
+        b_1 = res.x[b_off + 1]
+        objective_value = res.fun
+        dh_0 = abs(res.x[dh_off])
+        dg_0 = abs(res.x[dg_off])
 
+        # --- Build 288-step future plan sequence ---
         running_capacity = battery.current_charge
         running_cost = acquisition_cost
-
+        running_cum_cost = 0.0
         sequence = []
-        for i in range(number_step):
-            step_b = res.x[b_offset + i + 1]
-            step_c = res.x[c_offset + i]
-            step_g = res.x[g_offset + i]
-            step_dh = abs(res.x[dh_offset + i])
-            step_dg = abs(res.x[dg_offset + i])
 
-            # Track dynamic acquisition cost based on interval charging flows
+        for i in range(number_step):
+            step_b = res.x[b_off + i + 1]
+            step_c = res.x[c_off + i]
+            step_g = res.x[g_off + i]
+            step_dh = abs(res.x[dh_off + i])
+            step_dg = abs(res.x[dg_off + i])
+
+            # --- Acquisition cost tracking — §12 (uses raw unclamped prices) ---
             if step_c > 0.001:
-                # Attribute imported energy costs directly to the battery up to the charged volume.
                 charge_from_grid = min(step_c, step_g)
                 charge_cost = charge_from_grid * price_buy[i]
-
                 current_value = running_capacity * running_cost
                 new_value = current_value + charge_cost
                 new_capacity = running_capacity + step_c
-
                 if new_capacity > 0:
                     running_cost = new_value / new_capacity
-
             running_capacity = step_b
 
-            # Interpret the mathematical flows into semantic controller states
-            # We map to the 3 native hardware modes required by the HA Home Battery Controller.
-            # Any state that is not explicitly forcing grid import or grid export is simply
-            # delegating back to the inverter's automated Self-Consumption mode.
+            # --- Net grid flow — §11.2 (energy balance, inherently handles degeneracy) ---
+            net_grid_kwh = load_forecast[i] - pv_forecast[i] + step_c - step_dh - step_dg
+            net_grid_kw = net_grid_kwh * (60.0 / 5.0)
+
+            # --- State classification — §11.3 (solver variables, same approach as §10.2) ---
             if step_dg > 0.005:
                 state = "DISCHARGE_GRID"
             elif step_c > 0.005 and step_g > 0.005:
@@ -178,80 +221,57 @@ class LinearBatteryController(object):
             else:
                 state = "SELF_CONSUMPTION"
 
-            # Calculate actual bidirectional net grid flow predicted by the solver
-            # The continuous LP solver can mathematically 'degenerate' by simultaneously evaluating
-            # step_c and step_dh on the exact same interval to artificially minimize the objective boundary
-            # cost of step_g. Physical batteries cannot charge and discharge simultaneously.
-            net_grid_kwh = load_forecast[i] - pv_forecast[i]
-            if state == "CHARGE_GRID":
-                net_grid_kwh += step_c
+            # --- Cumulative cost tracking — §3.4 (raw prices, net grid flow) ---
+            if net_grid_kwh > 0:
+                running_cum_cost += net_grid_kwh * price_buy[i]
             else:
-                net_grid_kwh += step_c - step_dh - step_dg
+                running_cum_cost += net_grid_kwh * price_sell[i]
 
-            sequence.append(
-                {
-                    "target_soc": (step_b / capacity) * 100.0,
-                    "state": state,
-                    "net_grid": net_grid_kwh * (60.0 / 5.0),
-                    "load": load_forecast[i] * (60.0 / 5.0),
-                    "pv": pv_forecast[i] * (60.0 / 5.0),
-                    "import_price": price_buy[i],
-                    "export_price": price_sell[i],
-                    "acquisition_cost": running_cost,
-                }
-            )
+            sequence.append({
+                "target_soc": (step_b / capacity) * 100.0,
+                "state": state,
+                "net_grid": net_grid_kw,
+                "load": load_forecast[i] * (60.0 / 5.0),
+                "pv": pv_forecast[i] * (60.0 / 5.0),
+                "import_price": price_buy[i],
+                "export_price": price_sell[i],
+                "acquisition_cost": running_cost,
+                "cumulative_cost": running_cum_cost,
+            })
 
-        return b_1 / capacity, obj, dh_0, dg_0, sequence
-
-
-class FakeBattery:
-    def __init__(
-        self,
-        capacity,
-        current_charge,
-        charge_limit,
-        discharge_limit,
-        charging_efficiency=0.95,
-        discharging_efficiency=0.95,
-    ):
-        self.capacity = capacity
-        # charge state in percentage (0-1)
-        self.current_charge = current_charge
-        self.charging_power_limit = charge_limit
-        self.discharging_power_limit = discharge_limit
-        self.charging_efficiency = charging_efficiency
-        self.discharging_efficiency = discharging_efficiency
+        return b_1 / capacity, objective_value, dh_0, dg_0, sequence
 
 
+# ---------------------------------------------------------------------------
+#  LinearBatteryStateMachine — adapter for FSMContext/FSMResult interface
+# ---------------------------------------------------------------------------
 class LinearBatteryStateMachine(BatteryStateMachine):
     """
-    Implementation using pywraplp solver.
+    Wraps LinearBatteryController to satisfy the BatteryStateMachine ABC.
+    This is the entry point for both hybrid_tester.py and coordinator.py.
     """
 
     def __init__(self):
         self.controller = LinearBatteryController()
 
     def calculate_next_state(self, context: FSMContext) -> FSMResult:
-        # Force a strict 24-hour horizon (288 steps) to push the terminal boundary value out of frame.
-        # This prevents the solver from prematurely dumping energy to the grid if the API forecast data falls short.
+        # Force 288-step horizon — §4
         number_step = 288
-
-        # Always reset step count in loop for stateless evaluation
         self.controller.step = number_step
 
+        # --- Extract & pad forecast arrays — §5 ---
         price_buy = [0.0] * number_step
         price_sell = [0.0] * number_step
         for t in range(number_step):
-            idx = min(t, len(context.forecast_price) - 1) if len(context.forecast_price) > 0 else 0
+            idx = min(t, len(context.forecast_price) - 1) if context.forecast_price else 0
             if idx < len(context.forecast_price):
-                if isinstance(context.forecast_price[idx], dict):
-                    price_buy[t] = float(context.forecast_price[idx].get("import_price", 0.0))
-                    price_sell[t] = float(
-                        context.forecast_price[idx].get(
-                            "export_price",
-                            float(context.forecast_price[idx].get("import_price", 0.0)) * 0.8,
-                        )
-                    )
+                entry = context.forecast_price[idx]
+                if isinstance(entry, dict):
+                    price_buy[t] = float(entry.get("import_price", 0.0))
+                    price_sell[t] = float(entry.get(
+                        "export_price",
+                        float(entry.get("import_price", 0.0)) * 0.8,
+                    ))
                 else:
                     price_buy[t] = float(context.current_price)
                     price_sell[t] = float(context.current_price * 0.8)
@@ -262,134 +282,111 @@ class LinearBatteryStateMachine(BatteryStateMachine):
         load_f = [0.0] * number_step
         pv_f = [0.0] * number_step
         for t in range(number_step):
-            # Pad solar with the last known assumed solar
-            idx = min(t, len(context.forecast_solar) - 1) if len(context.forecast_solar) > 0 else 0
+            # Solar
+            idx = min(t, len(context.forecast_solar) - 1) if context.forecast_solar else 0
             if idx < len(context.forecast_solar):
-                if isinstance(context.forecast_solar[idx], dict):
-                    pv_f[t] = float(context.forecast_solar[idx].get("kw", 0.0))
-                else:
-                    pv_f[t] = float(context.forecast_solar[idx])
-            else:
-                pv_f[t] = 0.0
-
-            # Pad load with the last known assumed load
-            idx = min(t, len(context.forecast_load) - 1) if len(context.forecast_load) > 0 else 0
+                entry = context.forecast_solar[idx]
+                pv_f[t] = float(entry.get("kw", 0.0)) if isinstance(entry, dict) else float(entry)
+            # Load
+            idx = min(t, len(context.forecast_load) - 1) if context.forecast_load else 0
             if idx < len(context.forecast_load):
-                if isinstance(context.forecast_load[idx], dict):
-                    load_f[t] = float(context.forecast_load[idx].get("kw", 0.0))
-                else:
-                    load_f[t] = float(context.forecast_load[idx])
-            else:
-                load_f[t] = 0.0
+                entry = context.forecast_load[idx]
+                load_f[t] = float(entry.get("kw", 0.0)) if isinstance(entry, dict) else float(entry)
 
-        # Convert kW to kWh for the discrete step bounds
+        # kW → kWh per 5-minute step — §4
         load_f = [kw * (5.0 / 60.0) for kw in load_f]
         pv_f = [kw * (5.0 / 60.0) for kw in pv_f]
 
-        capacity = max(
-            13.5, context.config.get("battery_capacity", context.config.get("capacity_kwh", 27.0))
-        )
+        # --- Battery model — §6 ---
+        capacity = max(13.5, context.config.get("battery_capacity",
+                       context.config.get("capacity_kwh", 27.0)))
         limit_kw_charge = float(context.config.get("battery_rate_max", 6.3))
         limit_kw_discharge = float(context.config.get("inverter_limit", 10.0))
-        current_soc_perc = max(0.0, min(100.0, context.soc)) / 100.0
+        current_soc = max(0.0, min(100.0, context.soc)) / 100.0
 
-        import math
-
-        # Extract Round Trip Efficiency (RTE) from config. Default to 0.90 if missing.
         rte = float(context.config.get("round_trip_efficiency", 0.90))
-        # Mathematical one-way efficiency is the square root of the round trip efficiency
         one_way_eff = math.sqrt(rte)
 
         battery = FakeBattery(
             capacity=capacity,
-            current_charge=current_soc_perc,
+            current_charge=current_soc,
             charge_limit=limit_kw_charge,
             discharge_limit=limit_kw_discharge,
             charging_efficiency=one_way_eff,
             discharging_efficiency=one_way_eff,
         )
 
-        # Dynamic terminal valuation to prevent the solver dumping the battery to 0% at the horizon boundary.
-        # We use a mathematically blended weight: the average of the median import price and the acquisition cost.
-        # This explicitly tells the solver "tomorrow's energy has value" (preventing a dump)
-        # without making it so high that it incentivizes hoarding 26c grid power today.
-        import statistics
+        # --- Terminal valuation — §9 ---
+        median_buy = statistics.median(price_buy) if price_buy else context.acquisition_cost
+        blended = (median_buy + context.acquisition_cost) / 2.0
+        terminal_valuation = max(context.acquisition_cost, blended)
 
-        median_buy_price = (
-            statistics.median(price_buy) if len(price_buy) > 0 else context.acquisition_cost
-        )
-        blended_valuation = (median_buy_price + context.acquisition_cost) / 2.0
-        terminal_valuation = max(context.acquisition_cost, blended_valuation)
-
+        # --- Solve ---
         try:
-            target_soc_perc, projected_cost, raw_home_dis, raw_grid_dis, sequence = (
+            target_soc_frac, projected_cost, raw_dh, raw_dg, sequence = (
                 self.controller.propose_state_of_charge(
-                    site_id=0,
-                    timestamp="00:00",
                     battery=battery,
-                    actual_previous_load=0,
-                    actual_previous_pv_production=0,
                     price_buy=price_buy,
                     price_sell=price_sell,
                     load_forecast=load_f,
                     pv_forecast=pv_f,
                     acquisition_cost=terminal_valuation,
+                    raw_acquisition_cost=context.acquisition_cost,
+                    reserve_soc=float(context.config.get("reserve_soc", 0.0)),
                 )
             )
         except Exception as e:
-            _LOGGER.error("Linear Solver failed: %s", e)
-            return FSMResult(state="IDLE", limit_kw=0.0, reason=f"Solver Error: {e}")
+            _LOGGER.error("LP Solver failed: %s", e)
+            return FSMResult(state="ERROR", limit_kw=0.0, reason=f"Solver Error: {e}")
 
-        if target_soc_perc is None:
-            return FSMResult(state="IDLE", limit_kw=0.0, reason="Solver returned None")
+        if target_soc_frac is None:
+            return FSMResult(state="ERROR", limit_kw=0.0, reason="Solver returned None")
 
-        target_soc_perc = float(target_soc_perc)
+        target_soc_frac = float(target_soc_frac)
 
-        # Convert the Target SoC percentage back into an FSM Action Limit Kw
-        target_delta_kwh = (target_soc_perc - current_soc_perc) * capacity
-
-        # Convert kwh to kw (5 minute intervals means * 12)
-        power_kw = target_delta_kwh * 12.0
+        # --- Immediate action classification — §10 ---
+        target_delta_kwh = (target_soc_frac - current_soc) * capacity
+        power_kw = target_delta_kwh * 12.0  # kWh per 5-min → kW
 
         if power_kw > 0.1:
-            req_power = power_kw / battery.charging_efficiency
+            req = power_kw / battery.charging_efficiency
             return FSMResult(
                 state="CHARGE_GRID",
-                limit_kw=round(min(limit_kw_charge, req_power), 2),
+                limit_kw=round(min(limit_kw_charge, req), 2),
                 reason="LP Optimized Charge",
-                target_soc=target_soc_perc * 100.0,
+                target_soc=target_soc_frac * 100.0,
                 projected_cost=projected_cost,
                 future_plan=sequence,
             )
         elif power_kw < -0.1:
-            req_power = abs(power_kw) * battery.discharging_efficiency
-            net_grid_export = raw_grid_dis / (5.0 / 60.0)
-            net_home_offset = raw_home_dis / (5.0 / 60.0)
+            req = abs(power_kw) * battery.discharging_efficiency
+            dg_kw = raw_dg / (5.0 / 60.0)
+            dh_kw = raw_dh / (5.0 / 60.0)
 
-            if net_grid_export > net_home_offset:
+            if dg_kw > dh_kw:
                 return FSMResult(
                     state="DISCHARGE_GRID",
-                    limit_kw=round(min(limit_kw_discharge, req_power), 2),
+                    limit_kw=round(min(limit_kw_discharge, req), 2),
                     reason="LP Optimized Grid Export",
-                    target_soc=target_soc_perc * 100.0,
+                    target_soc=target_soc_frac * 100.0,
                     projected_cost=projected_cost,
                     future_plan=sequence,
                 )
             else:
                 return FSMResult(
-                    state="DISCHARGE_HOME",
-                    limit_kw=round(min(limit_kw_discharge, req_power), 2),
-                    reason="LP Optimized Home Discharge",
-                    target_soc=target_soc_perc * 100.0,
+                    state="SELF_CONSUMPTION",
+                    limit_kw=0.0,
+                    reason="LP Optimized Self-Consumption",
+                    target_soc=target_soc_frac * 100.0,
                     projected_cost=projected_cost,
                     future_plan=sequence,
                 )
 
         return FSMResult(
-            state="IDLE",
+            state="SELF_CONSUMPTION",
             limit_kw=0.0,
-            reason="LP Optimization: Idle optimal",
-            target_soc=target_soc_perc * 100.0,
+            reason="LP Optimization: No action needed",
+            target_soc=target_soc_frac * 100.0,
             projected_cost=projected_cost,
             future_plan=sequence,
         )

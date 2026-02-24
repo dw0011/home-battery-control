@@ -36,6 +36,7 @@ from .const import (
     CONF_IMPORT_PRICE_ENTITY,
     CONF_IMPORT_TODAY_ENTITY,
     CONF_INVERTER_LIMIT_MAX,
+    CONF_RESERVE_SOC,
     CONF_LOAD_HIGH_TEMP_THRESHOLD,
     CONF_LOAD_LOW_TEMP_THRESHOLD,
     CONF_LOAD_POWER_ENTITY,
@@ -53,6 +54,7 @@ from .const import (
     DEFAULT_BATTERY_CAPACITY,
     DEFAULT_BATTERY_RATE_MAX,
     DEFAULT_INVERTER_LIMIT,
+    DEFAULT_RESERVE_SOC,
     DEFAULT_SOLCAST_TODAY,
     DEFAULT_SOLCAST_TOMORROW,
     DOMAIN,
@@ -187,6 +189,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_INVERTER_LIMIT_MAX, default=DEFAULT_INVERTER_LIMIT
                     ): NumberSelector(
                         NumberSelectorConfig(min=0, max=50, step=0.1, mode=NumberSelectorMode.BOX)
+                    ),
+                    vol.Required(
+                        CONF_RESERVE_SOC, default=DEFAULT_RESERVE_SOC
+                    ): NumberSelector(
+                        NumberSelectorConfig(min=0, max=100, step=1.0, mode=NumberSelectorMode.BOX)
                     ),
                     vol.Required(CONF_IMPORT_PRICE_ENTITY): EntitySelector(
                         EntitySelectorConfig(domain="sensor")
@@ -370,6 +377,12 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
                         default=self._data.get(CONF_INVERTER_LIMIT_MAX, DEFAULT_INVERTER_LIMIT),
                     ): NumberSelector(
                         NumberSelectorConfig(min=0, max=50, step=0.1, mode=NumberSelectorMode.BOX)
+                    ),
+                    vol.Required(
+                        CONF_RESERVE_SOC,
+                        default=self._data.get(CONF_RESERVE_SOC, DEFAULT_RESERVE_SOC),
+                    ): NumberSelector(
+                        NumberSelectorConfig(min=0, max=100, step=1.0, mode=NumberSelectorMode.BOX)
                     ),
                     vol.Required(
                         CONF_IMPORT_PRICE_ENTITY, default=self._data.get(CONF_IMPORT_PRICE_ENTITY)
