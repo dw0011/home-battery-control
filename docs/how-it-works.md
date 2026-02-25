@@ -238,6 +238,36 @@ For each 5-minute interval, the solver chooses:
 
 ---
 
+### Price Forecast Reliability
+
+Amber Electric's forward prices are *forecasts* — they can change significantly between prediction time and the actual dispatch interval. A naive solver that blindly trusts a predicted afternoon price spike may hoard energy for a surge that never eventuates, missing earlier opportunities.
+
+HBC addresses this through several mechanisms:
+
+#### Current Defences
+
+1. **Re-solve on every entity change**  
+   The coordinator listens for state changes on price and other telemetry entities. When Amber revises a forecast, the solver re-runs immediately with the updated prices rather than waiting for the next 5-minute cycle. This means the plan automatically adapts as forecasts firm up closer to real-time.
+
+2. **Acquisition cost floor**  
+   The solver will **not** export energy to the grid if the feed-in price is below the battery's acquisition cost. This prevents the grid-drain scenario where a predicted high feed-in price (e.g. 25c/kWh) collapses at settlement to negative values (e.g. −2c/kWh). The battery values its stored energy at what it cost to charge — if selling isn't profitable, it holds.
+
+3. **Terminal valuation**  
+   Energy remaining in the battery at the end of the 24-hour window is valued at a blended rate between the median buy price and the acquisition cost. This discourages the solver from planning to "run the battery to zero" on speculative future prices.
+
+#### Planned Improvements
+
+The quality of input data — not the solver itself — is the primary challenge. The following approaches are under active consideration:
+
+- **Historical price blending**: Median the last 5 days of actual settled prices as a forecast, blended with Amber's live forecast. This would dampen false spikes while still responding to genuine price events.
+- **Spike dampening**: Discount or overwrite predicted spikes (e.g. > $1/kWh) with the average of surrounding non-spike prices, since extreme forecasts are disproportionately unreliable.
+- **Forecast confidence weighting**: Place more weight on the Amber forecast when a spike is predicted (since genuine events *do* occur), but temper it with historical data to reduce exposure to false signals.
+- **AEMO data source**: Use AEMO's own dispatch data as an alternative or supplementary price signal, which tends to be more conservative than Amber's retail forecasts.
+
+> **Note**: These are the same challenges faced by other home battery optimisers (e.g. Predbat). The input data quality problem is solver-agnostic — any linear or dynamic programming solver consuming the same unreliable forecast will exhibit the same false-spike chasing behaviour.
+
+---
+
 ## Outputs (Detailed)
 
 ### FSMResult
