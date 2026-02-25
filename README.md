@@ -10,6 +10,8 @@ A deterministic Home Assistant custom integration for optimising Tesla Powerwall
 
 Every 5 minutes, HBC collects your current energy tariffs, solar production forecast, and household load history. It feeds this data into an LP solver that calculates the mathematically optimal battery charge/discharge schedule for the next 24 hours, then sends the appropriate command to your Powerwall.
 
+![24-Hour Plan — the solver's optimal schedule with pricing, state, SoC, and cost projections](docs/images/plan-panel.png)
+
 ## Prerequisites
 
 | Requirement | Purpose | Integration |
