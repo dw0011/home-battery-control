@@ -422,7 +422,7 @@ class HBCPanel extends LitElement {
     return html`
       <div class="card table-card">
         <div class="header" style="margin-bottom: 12px;">
-          <h2 style="margin-bottom: 0;">24-Hour Plan</h2>
+          <h2 style="margin-bottom: 0;">24-Hour Plan <span style="font-size: 0.55em; font-weight: normal; opacity: 0.5; margin-left: 12px;">Updated: ${this._formatLastUpdate()}</span></h2>
           <div class="tabs">
             <button
               class="${this._planResolution === "5min" ? "active" : ""}"
@@ -436,9 +436,6 @@ class HBCPanel extends LitElement {
             >
               30 Min
             </button>
-          </div>
-          <div class="meta" style="font-size: 0.8em; opacity: 0.6; margin-left: 12px; align-self: center;">
-            Updated: ${this._formatLastUpdate()}
           </div>
         </div>
         

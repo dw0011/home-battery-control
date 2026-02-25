@@ -82,7 +82,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             config={
                 "_panel_custom": {
                     "name": "hbc-panel",
-                    "module_url": "/hbc/frontend/hbc-panel.js?v=44",
+                    "module_url": "/hbc/frontend/hbc-panel.js?v=45",
                 }
             },
         )
