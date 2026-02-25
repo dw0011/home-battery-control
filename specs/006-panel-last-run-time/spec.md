@@ -19,8 +19,8 @@ This should be added to both the **Dashboard tab** and the **Plan tab** so the u
    - The timestamp should be human-readable, ideally in local time. (e.g., standard datetime string format already provided by the backend).
 
 ## 3. Assumptions & Clarifications
-- **Assumption:** The backend API (`/hbc/api/status`) already provides a `last_update` string.
-- **Assumption:** No backend Python changes are strictly necessary if the property is already present in the JSON payload and just needs to be rendered higher up in the LitElement component hierarchy.
+- **Fact:** The backend API (`/hbc/api/status`) and the data update coordinator natively expose a `last_update` string. This is provided in ISO UTC format (e.g. `2026-02-25T06:52:30.804291+00:00`).
+- **Assumption:** No backend Python changes are strictly necessary. The frontend JS can parse this UTC timestamp, convert it to local time, and format it gracefully for display.
 
 ## 4. User Scenarios
 1. **Verifying Data Freshness (Dashboard)**: The user opens the HBC panel on their phone and looks at the Dashboard. They immediately see "Last Updated: 2026-02-25 17:30" and know the SoC and grid readings are current.
