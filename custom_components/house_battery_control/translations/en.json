@@ -45,7 +45,8 @@
                     "script_charge": "Script: Charge from Grid",
                     "script_charge_stop": "Script: Stop Charging",
                     "script_discharge": "Script: Discharge to Grid",
-                    "script_discharge_stop": "Script: Stop Discharging"
+                    "script_discharge_stop": "Script: Stop Discharging",
+                    "panel_admin_only": "Panel Visible to Admins Only"
                 }
             }
         }
@@ -102,7 +103,8 @@
                     "script_charge": "Script: Charge from Grid",
                     "script_charge_stop": "Script: Stop Charging",
                     "script_discharge": "Script: Discharge to Grid",
-                    "script_discharge_stop": "Script: Stop Discharging"
+                    "script_discharge_stop": "Script: Stop Discharging",
+                    "panel_admin_only": "Panel Visible to Admins Only"
                 }
             }
         }

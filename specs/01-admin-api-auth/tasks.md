@@ -47,6 +47,6 @@
 ## Phase 6: Polish & Verification
 
 - [x] T026 Run `pytest tests/ -v` — 131 passed, 0 failed ✓
-- [ ] T027 Commit and push to `01-admin-api-auth` branch
+- [x] T027 Commit `1aa67af` and push to `01-admin-api-auth` branch ✓
 - [ ] T028 Deploy to HA via HACS redownload + restart
 - [ ] T029 Verify: admin user sees dashboard, unauthenticated request returns 401, `/hbc/plan` returns 404

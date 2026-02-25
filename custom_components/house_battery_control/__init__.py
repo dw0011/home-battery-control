@@ -10,7 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
+from .const import CONF_PANEL_ADMIN_ONLY, DEFAULT_PANEL_ADMIN_ONLY, DOMAIN
 from .coordinator import HBCDataUpdateCoordinator
 from .web import (
     HBCApiPingView,
@@ -78,7 +78,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             sidebar_title="HBC",
             sidebar_icon="mdi:battery-charging",
             frontend_url_path="hbc-panel",
-            require_admin=True,
+            require_admin=entry.data.get(CONF_PANEL_ADMIN_ONLY, DEFAULT_PANEL_ADMIN_ONLY),
             config={
                 "_panel_custom": {
                     "name": "hbc-panel",

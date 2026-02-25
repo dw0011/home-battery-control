@@ -64,3 +64,14 @@ def test_web_views_importable():
         HBCApiStatusView,
         HBCDashboardView,
     )
+
+
+def test_panel_admin_only_constant_exists():
+    """CONF_PANEL_ADMIN_ONLY must exist with default True."""
+    from custom_components.house_battery_control.const import (
+        CONF_PANEL_ADMIN_ONLY,
+        DEFAULT_PANEL_ADMIN_ONLY,
+    )
+
+    assert isinstance(CONF_PANEL_ADMIN_ONLY, str)
+    assert DEFAULT_PANEL_ADMIN_ONLY is True

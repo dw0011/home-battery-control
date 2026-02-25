@@ -36,6 +36,7 @@ from .const import (
     CONF_IMPORT_PRICE_ENTITY,
     CONF_IMPORT_TODAY_ENTITY,
     CONF_INVERTER_LIMIT_MAX,
+    CONF_PANEL_ADMIN_ONLY,
     CONF_RESERVE_SOC,
     CONF_LOAD_HIGH_TEMP_THRESHOLD,
     CONF_LOAD_LOW_TEMP_THRESHOLD,
@@ -54,6 +55,7 @@ from .const import (
     DEFAULT_BATTERY_CAPACITY,
     DEFAULT_BATTERY_RATE_MAX,
     DEFAULT_INVERTER_LIMIT,
+    DEFAULT_PANEL_ADMIN_ONLY,
     DEFAULT_RESERVE_SOC,
     DEFAULT_SOLCAST_TODAY,
     DEFAULT_SOLCAST_TOMORROW,
@@ -436,6 +438,10 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
                         CONF_SCRIPT_DISCHARGE_STOP,
                         description={"suggested_value": self._data.get(CONF_SCRIPT_DISCHARGE_STOP)},
                     ): EntitySelector(EntitySelectorConfig(domain="script")),
+                    vol.Optional(
+                        CONF_PANEL_ADMIN_ONLY,
+                        default=self._data.get(CONF_PANEL_ADMIN_ONLY, DEFAULT_PANEL_ADMIN_ONLY),
+                    ): BooleanSelector(),
                 }
             ),
         )

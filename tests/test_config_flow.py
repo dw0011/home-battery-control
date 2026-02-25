@@ -21,6 +21,7 @@ from custom_components.house_battery_control.const import (
     CONF_IMPORT_TODAY_ENTITY,
     CONF_INVERTER_LIMIT_MAX,
     CONF_LOAD_TODAY_ENTITY,
+    CONF_PANEL_ADMIN_ONLY,
     CONF_SCRIPT_CHARGE,
     CONF_SCRIPT_CHARGE_STOP,
     CONF_SCRIPT_DISCHARGE,
@@ -58,6 +59,7 @@ def test_all_config_keys_are_strings():
         CONF_SCRIPT_CHARGE_STOP,
         CONF_SCRIPT_DISCHARGE,
         CONF_SCRIPT_DISCHARGE_STOP,
+        CONF_PANEL_ADMIN_ONLY,
     ]
     for key in keys:
         assert isinstance(key, str), f"{key} is not a string"
@@ -89,6 +91,7 @@ def test_config_keys_are_unique():
         CONF_SCRIPT_CHARGE_STOP,
         CONF_SCRIPT_DISCHARGE,
         CONF_SCRIPT_DISCHARGE_STOP,
+        CONF_PANEL_ADMIN_ONLY,
     ]
     assert len(keys) == len(set(keys)), "Duplicate config keys detected"
 
@@ -124,4 +127,19 @@ def test_no_tariff_entity_constant():
 
     assert not hasattr(const, "CONF_TARIFF_ENTITY"), (
         "CONF_TARIFF_ENTITY should be removed — replaced by CONF_IMPORT/EXPORT_PRICE_ENTITY"
+    )
+
+
+def test_options_control_has_panel_visibility():
+    """Options control step schema must include CONF_PANEL_ADMIN_ONLY (FR-001)."""
+    import inspect
+
+    from custom_components.house_battery_control.config_flow import HBCOptionsFlowHandler
+
+    source = inspect.getsource(HBCOptionsFlowHandler.async_step_control)
+    assert "CONF_PANEL_ADMIN_ONLY" in source, (
+        "Options control step must include panel_admin_only toggle"
+    )
+    assert "BooleanSelector" in source, (
+        "Panel visibility must use BooleanSelector"
     )
