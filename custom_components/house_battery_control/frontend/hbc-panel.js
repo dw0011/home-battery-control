@@ -118,6 +118,18 @@ class HBCPanel extends LitElement {
     };
   }
 
+  _formatLastUpdate() {
+    const raw = this._data.last_update;
+    if (!raw) return "—";
+    try {
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return raw;
+      return d.toLocaleString([], { dateStyle: "short", timeStyle: "medium" });
+    } catch (e) {
+      return raw;
+    }
+  }
+
   // ── Dashboard Tab ──────────────────────────────────────
   _renderDashboard() {
     const d = this._data;
@@ -203,6 +215,9 @@ class HBCPanel extends LitElement {
             <div class="stat-label">Total Load kWh</div>
           </div>
         </div>
+      </div>
+      <div class="meta" style="text-align: center; padding: 8px 0; opacity: 0.6; font-size: 0.85em;">
+        Plan last ran: ${this._formatLastUpdate()}
       </div>
       ${this._renderSensors()}
     `;
@@ -421,6 +436,9 @@ class HBCPanel extends LitElement {
             >
               30 Min
             </button>
+          </div>
+          <div class="meta" style="font-size: 0.8em; opacity: 0.6; margin-left: 12px; align-self: center;">
+            Updated: ${this._formatLastUpdate()}
           </div>
         </div>
         
