@@ -318,7 +318,6 @@ async def test_load_linear_interpolation(mock_hass):
             start,
             duration_hours=1,
             load_entity_id="sensor.energy",
-            max_load_kw=10.0,
         )
 
     # prediction[0] predicts 12:00 -> 12:05 based on yesterday 12:00 -> 12:05.
@@ -377,7 +376,6 @@ async def test_load_midnight_reset_anomaly(mock_hass):
             start,
             duration_hours=1,
             load_entity_id="sensor.energy",
-            max_load_kw=10.0,
         )
 
     # Int1: 12:00 -> 12:05
@@ -436,7 +434,6 @@ async def test_load_matches_average_24hr_forecast(mock_hass):
         start,
         duration_hours=24,
         load_entity_id="sensor.powerwall_2_home_usage",
-        max_load_kw=10.0,
     )
 
     # Ensure there are exactly 288 predictions
@@ -487,3 +484,50 @@ async def test_load_matches_average_24hr_forecast(mock_hass):
         print("Top 10 Mismatches:\\n" + "\\n".join(mismatches[:10]))
 
     assert pass_rate >= 90.0, f"Pass rate {pass_rate:.1f}% is below 90% threshold"
+
+
+@pytest.mark.asyncio
+async def test_unclamped_high_load(mock_hass):
+    """Verify that load prediction does not arbitrarily clamp high power draw."""
+    import datetime as dt
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from homeassistant.core import State
+
+    predictor = LoadPredictor(mock_hass)
+
+    async def mock_add_executor_job(func, *args):
+        return func(*args)
+
+    mock_hass.async_add_executor_job = AsyncMock(side_effect=mock_add_executor_job)
+
+    start = dt.datetime(2025, 2, 20, 12, 0, 0, tzinfo=dt.timezone.utc)
+    base_past = start - dt.timedelta(days=1)
+
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kWh"})
+
+    # Create a 5 min interval with 0.625 kWh delta, which equates to exactly 7.5 kW average
+    mock_states = [
+        State("sensor.energy", "10.0", last_updated=base_past, last_changed=base_past),
+        State(
+            "sensor.energy",
+            "10.625",
+            last_updated=base_past + dt.timedelta(minutes=5),
+            last_changed=base_past + dt.timedelta(minutes=5),
+        )
+    ]
+
+    with patch(
+        "homeassistant.components.recorder.history.get_significant_states",
+        return_value={"sensor.energy": mock_states},
+    ):
+        # We purposely omit max_load_kw here so it runs with the (currently bad) default limit
+        prediction = await predictor.async_predict(
+            start,
+            duration_hours=1,
+            load_entity_id="sensor.energy"
+        )
+
+    # In currently clamped logic, this will fail as prediction[0]["kw"] == 4.0
+    # We want it to be 7.5 organically without needing the argument injected
+    assert prediction[0]["kw"] == pytest.approx(7.5, abs=0.1)

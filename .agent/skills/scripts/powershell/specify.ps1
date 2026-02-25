@@ -8,7 +8,7 @@ $ErrorActionPreference = "Stop"
 $JSON_MODE     = $false
 $SHORT_NAME    = ""
 $BRANCH_NUMBER = ""
-$ARGS          = New-Object System.Collections.Generic.List[string]
+$DESC_ARGS     = New-Object System.Collections.Generic.List[string]
 
 for ($i = 0; $i -lt $args.Count; $i++) {
   $arg = $args[$i]
@@ -36,7 +36,7 @@ for ($i = 0; $i -lt $args.Count; $i++) {
     "--help" { Show-Help; exit 0 }
     "-h"     { Show-Help; exit 0 }
 
-    default { $ARGS.Add($arg); continue }
+    default { $DESC_ARGS.Add($arg); continue }
   }
 }
 
@@ -57,7 +57,7 @@ Examples:
 "@ | Write-Host
 }
 
-$FEATURE_DESCRIPTION = ($ARGS -join " ").Trim()
+$FEATURE_DESCRIPTION = ($DESC_ARGS -join " ").Trim()
 if ([string]::IsNullOrWhiteSpace($FEATURE_DESCRIPTION)) {
   [Console]::Error.WriteLine("Usage: specify.ps1 [--json] [--short-name <name>] [--number N] <feature_description>")
   exit 1

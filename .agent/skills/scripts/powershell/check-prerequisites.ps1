@@ -74,7 +74,7 @@ $DATA_MODEL    = $paths.DATA_MODEL
 $CONTRACTS_DIR = $paths.CONTRACTS_DIR
 $QUICKSTART    = $paths.QUICKSTART
 
-if (-not (Check-FeatureBranch -CurrentBranch $CURRENT_BRANCH -HasGit $HAS_GIT)) {
+if (-not (Check-FeatureBranch -Branch $CURRENT_BRANCH -HasGitRepo $HAS_GIT)) {
   exit 1
 }
 

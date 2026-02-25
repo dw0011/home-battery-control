@@ -25,7 +25,6 @@ class LoadPredictor:
         low_threshold: float = 15.0,
         duration_hours: int = 24,
         load_entity_id: str | None = None,
-        max_load_kw: float = 4.0,
     ) -> List[dict]:
         """
         Predict load for the next N hours in 5-minute intervals.
@@ -152,8 +151,8 @@ class LoadPredictor:
             elif temp < low_threshold:
                 derived_kw += (low_threshold - temp) * low_sensitivity
 
-            # Round off to 2 decimals + Apply 4kW safety cap
-            kw_final = round(max(0.0, min(derived_kw, max_load_kw)), 2)
+            # Round off to 2 decimals (preserve 0.0 floor)
+            kw_final = round(max(0.0, derived_kw), 2)
 
             prediction.append({"start": current.isoformat(), "kw": kw_final})
             current += timedelta(minutes=5)
