@@ -123,14 +123,13 @@ LoadPredictor builds a statistical profile from your actual usage history:
 2. Passes through `historical_analyzer.py` to build an average profile per 5-minute time slot
 3. Handles both **power sensors** (kW, used directly) and **energy sensors** (kWh, converted via `kW = delta_kWh × 12`)
 4. Applies **temperature adjustments**: if the weather forecast shows temperatures above/below your configured thresholds, the load prediction is increased by `sensitivity × degrees_beyond_threshold`
-5. Applies a **safety cap** (default 4 kW) to prevent unrealistic spikes
 
 Each interval:
 
 ```
 Load Interval {
     start: str (ISO 8601)    # Interval start
-    kw:    float             # Predicted household load in kW (0.00–4.00)
+    kw:    float             # Predicted household load in kW (dynamically scaled)
 }
 ```
 
