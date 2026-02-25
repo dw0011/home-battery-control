@@ -413,93 +413,34 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Update Control Services options."""
-        control_keys = [
-            CONF_ALLOW_CHARGE_FROM_GRID_ENTITY,
-            CONF_ALLOW_EXPORT_ENTITY,
-            CONF_SCRIPT_CHARGE,
-            CONF_SCRIPT_CHARGE_STOP,
-            CONF_SCRIPT_DISCHARGE,
-            CONF_SCRIPT_DISCHARGE_STOP,
-        ]
-
         if user_input is not None:
-            # If skip is checked, clear all control entities for observation mode
-            if user_input.get("skip_control", False):
-                for key in control_keys:
-                    self._data.pop(key, None)
-            else:
-                # Remove skip flag, then update data
-                user_input.pop("skip_control", None)
-                # Strip empty strings so clearing an entity actually removes it
-                for key in list(user_input.keys()):
-                    if user_input[key] in (None, ""):
-                        user_input.pop(key)
-                        self._data.pop(key, None)
-                    else:
-                        self._data[key] = user_input[key]
-
+            self._data.update(user_input)
             self.hass.config_entries.async_update_entry(self.config_entry, data=self._data)
             return self.async_create_entry(title="", data={})
-
-        # Determine if currently in observation mode (no scripts configured)
-        has_any_script = any(self._data.get(k) for k in control_keys)
 
         return self.async_show_form(
             step_id="control",
             data_schema=vol.Schema(
                 {
-                    vol.Required(
-                        "skip_control", default=not has_any_script
-                    ): BooleanSelector(),
-                    vol.Optional(
-                        CONF_ALLOW_CHARGE_FROM_GRID_ENTITY,
-                        description={
-                            "suggested_value": self._data.get(
-                                CONF_ALLOW_CHARGE_FROM_GRID_ENTITY
-                            )
-                        },
-                    ): EntitySelector(
-                        EntitySelectorConfig(domain=["switch", "script"])
-                    ),
-                    vol.Optional(
-                        CONF_ALLOW_EXPORT_ENTITY,
-                        description={
-                            "suggested_value": self._data.get(CONF_ALLOW_EXPORT_ENTITY)
-                        },
-                    ): EntitySelector(
-                        EntitySelectorConfig(domain=["select", "script"])
-                    ),
                     vol.Optional(
                         CONF_SCRIPT_CHARGE,
-                        description={
-                            "suggested_value": self._data.get(CONF_SCRIPT_CHARGE)
-                        },
+                        description={"suggested_value": self._data.get(CONF_SCRIPT_CHARGE)},
                     ): EntitySelector(EntitySelectorConfig(domain="script")),
                     vol.Optional(
                         CONF_SCRIPT_CHARGE_STOP,
-                        description={
-                            "suggested_value": self._data.get(CONF_SCRIPT_CHARGE_STOP)
-                        },
+                        description={"suggested_value": self._data.get(CONF_SCRIPT_CHARGE_STOP)},
                     ): EntitySelector(EntitySelectorConfig(domain="script")),
                     vol.Optional(
                         CONF_SCRIPT_DISCHARGE,
-                        description={
-                            "suggested_value": self._data.get(CONF_SCRIPT_DISCHARGE)
-                        },
+                        description={"suggested_value": self._data.get(CONF_SCRIPT_DISCHARGE)},
                     ): EntitySelector(EntitySelectorConfig(domain="script")),
                     vol.Optional(
                         CONF_SCRIPT_DISCHARGE_STOP,
-                        description={
-                            "suggested_value": self._data.get(
-                                CONF_SCRIPT_DISCHARGE_STOP
-                            )
-                        },
+                        description={"suggested_value": self._data.get(CONF_SCRIPT_DISCHARGE_STOP)},
                     ): EntitySelector(EntitySelectorConfig(domain="script")),
                     vol.Optional(
                         CONF_PANEL_ADMIN_ONLY,
-                        default=self._data.get(
-                            CONF_PANEL_ADMIN_ONLY, DEFAULT_PANEL_ADMIN_ONLY
-                        ),
+                        default=self._data.get(CONF_PANEL_ADMIN_ONLY, DEFAULT_PANEL_ADMIN_ONLY),
                     ): BooleanSelector(),
                 }
             ),
