@@ -12,6 +12,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from .const import (
+    CONF_OBSERVATION_MODE,
     CONF_SCRIPT_CHARGE,
     CONF_SCRIPT_CHARGE_STOP,
     CONF_SCRIPT_DISCHARGE,
@@ -69,6 +70,11 @@ class PowerwallExecutor:
         self._last_state = state
         self._last_limit = limit_kw
         self._apply_count += 1
+
+        # Observation mode: track state but do not execute commands
+        if self._config.get(CONF_OBSERVATION_MODE, False):
+            _LOGGER.info(f"Observation mode — suppressing: {state} (limit: {limit_kw:.1f} kW)")
+            return
 
         _LOGGER.info(f"Applying state: {state} (limit: {limit_kw:.1f} kW)")
 

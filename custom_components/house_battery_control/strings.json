@@ -95,12 +95,14 @@
             },
             "control": {
                 "title": "Control Services (Optional)",
-                "description": "Map the scripts used to control the Powerwall.",
+                "description": "Control script configuration. Enable Observation Mode to suppress commands while keeping scripts configured.",
                 "data": {
+                    "observation_mode": "Observation Mode (suppress all commands)",
                     "script_charge": "Script: Charge from Grid",
                     "script_charge_stop": "Script: Stop Charging",
                     "script_discharge": "Script: Discharge to Grid",
-                    "script_discharge_stop": "Script: Stop Discharging"
+                    "script_discharge_stop": "Script: Stop Discharging",
+                    "panel_admin_only": "Panel visible to admins only"
                 }
             }
         }

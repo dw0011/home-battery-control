@@ -41,6 +41,9 @@ CONF_SCRIPT_CHARGE_STOP = "script_charge_stop"
 CONF_SCRIPT_DISCHARGE = "script_discharge"
 CONF_SCRIPT_DISCHARGE_STOP = "script_discharge_stop"
 
+# Observation Mode
+CONF_OBSERVATION_MODE = "observation_mode"
+
 # Panel
 CONF_PANEL_ADMIN_ONLY = "panel_admin_only"
 

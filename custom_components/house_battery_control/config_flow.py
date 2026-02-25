@@ -24,6 +24,7 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_ALLOW_CHARGE_FROM_GRID_ENTITY,
     CONF_ALLOW_EXPORT_ENTITY,
+    CONF_OBSERVATION_MODE,
     CONF_BATTERY_CAPACITY,
     CONF_BATTERY_CHARGE_RATE_MAX,
     CONF_BATTERY_POWER_ENTITY,
@@ -414,8 +415,30 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
     ) -> ConfigFlowResult:
         """Update Control Services options."""
         if user_input is not None:
-            self._data.update(user_input)
-            self.hass.config_entries.async_update_entry(self.config_entry, data=self._data)
+            # Persist observation mode
+            self._data[CONF_OBSERVATION_MODE] = user_input.pop(
+                CONF_OBSERVATION_MODE, False
+            )
+            # Persist panel admin only
+            self._data[CONF_PANEL_ADMIN_ONLY] = user_input.pop(
+                CONF_PANEL_ADMIN_ONLY, DEFAULT_PANEL_ADMIN_ONLY
+            )
+            # Handle script entities: strip empty values, store the rest
+            for key in (
+                CONF_SCRIPT_CHARGE,
+                CONF_SCRIPT_CHARGE_STOP,
+                CONF_SCRIPT_DISCHARGE,
+                CONF_SCRIPT_DISCHARGE_STOP,
+            ):
+                val = user_input.get(key)
+                if val in (None, ""):
+                    self._data.pop(key, None)
+                else:
+                    self._data[key] = val
+
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, data=self._data
+            )
             return self.async_create_entry(title="", data={})
 
         return self.async_show_form(
@@ -423,24 +446,40 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=vol.Schema(
                 {
                     vol.Optional(
+                        CONF_OBSERVATION_MODE,
+                        default=self._data.get(CONF_OBSERVATION_MODE, False),
+                    ): BooleanSelector(),
+                    vol.Optional(
                         CONF_SCRIPT_CHARGE,
-                        description={"suggested_value": self._data.get(CONF_SCRIPT_CHARGE)},
+                        description={
+                            "suggested_value": self._data.get(CONF_SCRIPT_CHARGE)
+                        },
                     ): EntitySelector(EntitySelectorConfig(domain="script")),
                     vol.Optional(
                         CONF_SCRIPT_CHARGE_STOP,
-                        description={"suggested_value": self._data.get(CONF_SCRIPT_CHARGE_STOP)},
+                        description={
+                            "suggested_value": self._data.get(CONF_SCRIPT_CHARGE_STOP)
+                        },
                     ): EntitySelector(EntitySelectorConfig(domain="script")),
                     vol.Optional(
                         CONF_SCRIPT_DISCHARGE,
-                        description={"suggested_value": self._data.get(CONF_SCRIPT_DISCHARGE)},
+                        description={
+                            "suggested_value": self._data.get(CONF_SCRIPT_DISCHARGE)
+                        },
                     ): EntitySelector(EntitySelectorConfig(domain="script")),
                     vol.Optional(
                         CONF_SCRIPT_DISCHARGE_STOP,
-                        description={"suggested_value": self._data.get(CONF_SCRIPT_DISCHARGE_STOP)},
+                        description={
+                            "suggested_value": self._data.get(
+                                CONF_SCRIPT_DISCHARGE_STOP
+                            )
+                        },
                     ): EntitySelector(EntitySelectorConfig(domain="script")),
                     vol.Optional(
                         CONF_PANEL_ADMIN_ONLY,
-                        default=self._data.get(CONF_PANEL_ADMIN_ONLY, DEFAULT_PANEL_ADMIN_ONLY),
+                        default=self._data.get(
+                            CONF_PANEL_ADMIN_ONLY, DEFAULT_PANEL_ADMIN_ONLY
+                        ),
                     ): BooleanSelector(),
                 }
             ),
