@@ -88,6 +88,36 @@ class HBCPanel extends LitElement {
     localStorage.setItem("hbc_sensors_hidden", this._sensorsHidden);
   }
 
+  _calculateSummaryStats() {
+    const plan = this._data.plan || [];
+    if (plan.length === 0) {
+      return { avgImport: "0.00", avgExport: "0.00", totalPV: "0.0", totalLoad: "0.0" };
+    }
+
+    const parseNum = (str) => parseFloat(String(str).replace(/[^0-9.-]+/g, "")) || 0;
+
+    let sumImport = 0;
+    let sumExport = 0;
+    let sumPVKw = 0;
+    let sumLoadKw = 0;
+
+    plan.forEach(r => {
+      sumImport += parseNum(r["Import Rate"]);
+      sumExport += parseNum(r["Export Rate"]);
+      sumPVKw += parseNum(r["PV Forecast"]);
+      sumLoadKw += parseNum(r["Load Forecast"]);
+    });
+
+    const count = plan.length;
+    return {
+      avgImport: (sumImport / count).toFixed(2),
+      avgExport: (sumExport / count).toFixed(2),
+      // kW to kWh over 5-minute intervals (divide by 12)
+      totalPV: (sumPVKw / 12).toFixed(1),
+      totalLoad: (sumLoadKw / 12).toFixed(1)
+    };
+  }
+
   // ── Dashboard Tab ──────────────────────────────────────
   _renderDashboard() {
     const d = this._data;
@@ -101,6 +131,7 @@ class HBCPanel extends LitElement {
     const export_today = d.export_today !== undefined ? d.export_today : 0;
     const state = d.state || "IDLE";
     const reason = d.reason || "";
+    const summaryStats = this._calculateSummaryStats();
 
     return html`
       <div class="card">
@@ -149,6 +180,27 @@ class HBCPanel extends LitElement {
           <div class="stat">
             <div class="state-badge">${state}</div>
             <div class="stat-label">${reason}</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>24-Hour Forecast Summary</h2>
+        <div class="status-grid">
+          <div class="stat">
+            <div class="stat-value">${summaryStats.avgImport}</div>
+            <div class="stat-label">Avg Import c/kWh</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">${summaryStats.avgExport}</div>
+            <div class="stat-label">Avg Export c/kWh</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">${summaryStats.totalPV}</div>
+            <div class="stat-label">Total Gen kWh</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">${summaryStats.totalLoad}</div>
+            <div class="stat-label">Total Load kWh</div>
           </div>
         </div>
       </div>
@@ -334,6 +386,24 @@ class HBCPanel extends LitElement {
       }
     }
 
+    const summaryStats = this._calculateSummaryStats();
+    const footerKeys = {
+      "Time": "24h Summary:",
+      "Local Time": "",
+      "Import": summaryStats.avgImport,
+      "Export": summaryStats.avgExport,
+      "State": "",
+      "Limit": "",
+      "Net Grid": "",
+      "PV": summaryStats.totalPV + " kwh",
+      "Load": summaryStats.totalLoad + " kwh",
+      "Temp": "",
+      "SoC": "",
+      "Cost": "",
+      "Cumul. Cost": "",
+      "Acq. Cost": "",
+    };
+
     return html`
       <div class="card table-card">
         <div class="header" style="margin-bottom: 12px;">
@@ -399,6 +469,11 @@ class HBCPanel extends LitElement {
                 `;
     })}
             </tbody>
+            <tfoot>
+              <tr style="font-weight: bold; background: rgba(255,255,255,0.05);">
+                ${cols.filter(c => !this._hiddenCols.includes(c)).map(c => html`<td>${footerKeys[c] || ""}</td>`)}
+              </tr>
+            </tfoot>
           </table>
         </div>
       </div>
