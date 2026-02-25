@@ -36,5 +36,6 @@ session_logs/
 # Misc
 New folder/
 *.log
-
+*.zip
 archive/
+.mypy_cache/
