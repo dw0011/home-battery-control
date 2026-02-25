@@ -1,0 +1,105 @@
+# Configuration Reference
+
+This document covers every configuration option available in the House Battery Control integration.
+
+## Initial Setup (Config Flow)
+
+After installing HBC, go to **Settings → Devices & Services → Add Integration → House Battery Control**.
+
+You can choose between **Manual** configuration (3-step wizard) or **YAML import** (paste a YAML block with all settings).
+
+---
+
+## Step 1: Telemetry (Power Sensors)
+
+These are the real-time power sensors HBC reads every 5 minutes.
+
+| Key | Label | Type | Required | Notes |
+|---|---|---|---|---|
+| `battery_soc_entity` | Battery SoC | `sensor` | ✅ | Current battery state of charge (%). Must report 0–100. |
+| `battery_power_entity` | Battery Power | `sensor` | ✅ | Current battery charge/discharge power (kW). |
+| `battery_power_invert` | Invert Battery Power | `boolean` | ❌ | Enable if your sensor reports charging as negative. Default: off. |
+| `solar_entity` | Solar Power | `sensor` | ✅ | Current solar production (kW). |
+| `grid_entity` | Grid Power | `sensor` | ✅ | Current grid import/export power (kW). |
+| `grid_power_invert` | Invert Grid Power | `boolean` | ❌ | Enable if your sensor reports import as negative. Default: off. |
+| `load_power_entity` | Load Power | `sensor` | ❌ | Current house load (kW). Optional — can be derived from other sensors. |
+
+### When to Use Inversion
+
+Different inverter brands report power direction differently:
+
+- **Tesla Gateway**: Battery power is positive when discharging → **no inversion needed**
+- **Some inverters**: Battery power is positive when charging → **enable inversion**
+- **Grid sensors**: Positive = import is the HA convention, but some sensors use positive = export → **enable inversion** if your grid sensor is backwards
+
+---
+
+## Step 2: Energy & Metrics
+
+Cumulative energy sensors, forecasting sources, and battery specifications.
+
+### Cumulative Energy Sensors
+
+| Key | Label | Type | Required | Notes |
+|---|---|---|---|---|
+| `load_today_entity` | Load Today | `sensor` | ❌ | Cumulative household energy today (kWh). Used for load prediction. |
+| `import_today_entity` | Import Today | `sensor` | ❌ | Cumulative grid import today (kWh). Displayed on dashboard. |
+| `export_today_entity` | Export Today | `sensor` | ❌ | Cumulative grid export today (kWh). Displayed on dashboard. |
+
+### Temperature Calibration
+
+These adjust the load forecast based on temperature. If your house uses more power in extreme heat (air conditioning) or cold (heating), configure these.
+
+| Key | Label | Default | Notes |
+|---|---|---|---|
+| `load_high_temp_sensitivity` | High Temp Sensitivity | `0.0` | kW increase per °C above threshold |
+| `load_low_temp_sensitivity` | Low Temp Sensitivity | `0.0` | kW increase per °C below threshold |
+| `load_high_temp_threshold` | High Temp Threshold | `25.0` | °C above which load increases |
+| `load_low_temp_threshold` | Low Temp Threshold | `15.0` | °C below which load increases |
+
+### Battery Specifications
+
+| Key | Label | Default | Notes |
+|---|---|---|---|
+| `battery_capacity` | Battery Capacity | `27.0` | Total usable capacity in kWh (2× Powerwall 2 = 27 kWh) |
+| `battery_rate_max` | Max Charge/Discharge Rate | `6.3` | Maximum charge/discharge rate in kW |
+| `inverter_limit` | Inverter Limit | `10.0` | Maximum inverter throughput in kW |
+| `reserve_soc` | Reserve SoC | `0.0` | Minimum battery SoC (%) the solver will maintain |
+
+### Pricing & Forecast Sources
+
+| Key | Label | Default | Notes |
+|---|---|---|---|
+| `import_price_entity` | Import Price | — | Amber Electric import price sensor. Reports c/kWh with `forecast` attribute. |
+| `export_price_entity` | Export Price | — | Amber Electric export/feed-in price sensor. Reports c/kWh with `forecast` attribute. |
+| `weather_entity` | Weather Entity | — | Any HA weather entity providing temperature forecasts. |
+| `solcast_today_entity` | Solcast Today | `sensor.solcast_pv_forecast_today` | Solcast PV forecast for today. |
+| `solcast_tomorrow_entity` | Solcast Tomorrow | `sensor.solcast_pv_forecast_tomorrow` | Solcast PV forecast for tomorrow. |
+
+---
+
+## Step 3: Control Services
+
+Scripts that HBC calls to control the Powerwall. Leave blank for observation/debug mode (HBC calculates but doesn't act).
+
+| Key | Label | Notes |
+|---|---|---|
+| `script_charge` | Script: Charge from Grid | Called when FSM enters `CHARGE_GRID` state |
+| `script_charge_stop` | Script: Stop Charging | Called when FSM exits charging states |
+| `script_discharge` | Script: Discharge to Grid | Called when FSM enters `DISCHARGE_GRID` state |
+| `script_discharge_stop` | Script: Stop Discharging | Called when FSM exits discharge states |
+| `panel_admin_only` | Panel Visible to Admins Only | Toggle: ON = sidebar entry visible to admin users only (default). OFF = visible to all users. |
+
+---
+
+## Options Flow (Changing Settings After Install)
+
+To change any setting after initial configuration:
+
+1. Go to **Settings → Devices & Services**
+2. Find **House Battery Control** and click **Configure** (gear icon)
+3. Select the category to edit: **Telemetry**, **Energy & Metrics**, or **Control Services**
+4. Make changes and click **Submit**
+5. The integration will reload with the new settings
+
+> **Note**: Some changes (like `panel_admin_only`) require an integration reload or HA restart to take effect.

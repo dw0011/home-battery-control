@@ -1,70 +1,82 @@
 # House Battery Control
 
-A deterministic Home Assistant custom integration for controlling Tesla Powerwall batteries using a Finite State Machine (FSM). Replaces complex ML approaches with rule-based logic for reliable, low-resource operation.
+[![HACS](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
+[![HA](https://img.shields.io/badge/Home%20Assistant-2024.1%2B-blue.svg)](https://www.home-assistant.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Features
+A deterministic Home Assistant custom integration for optimising Tesla Powerwall battery usage. Uses a Linear Programming solver to minimise daily electricity costs based on real-time Amber Electric spot pricing, Solcast solar forecasts, and historical load patterns.
 
-- **Deterministic FSM** — 6 states: IDLE, CHARGE_GRID, CHARGE_SOLAR, DISCHARGE_HOME, DISCHARGE_GRID, PRESERVE
-- **5-minute cadence** — Aligned with Amber Electric pricing intervals
-- **Temperature-sensitive load prediction** — Adjusts forecasts based on weather
-- **Deduplicating executor** — Only sends commands when state changes
-- **Web dashboard** — Power flow diagram, 24h plan table, JSON API
-- **3-step config flow** — Telemetry → Energy & Metrics → Control Services
+## What It Does
 
-## System
+Every 5 minutes, HBC collects your current energy tariffs, solar production forecast, and household load history. It feeds this data into an LP solver that calculates the mathematically optimal battery charge/discharge schedule for the next 24 hours, then sends the appropriate command to your Powerwall.
 
-- 2× Tesla Powerwall 2 (27 kWh usable)
-- 4 kW solar array
-- Amber Electric (5-min spot pricing)
-- Solcast solar forecasting
+## Prerequisites
+
+| Requirement | Purpose | Integration |
+|---|---|---|
+| **Home Assistant** 2024.1+ | Platform | — |
+| **HACS** | Installation | [hacs.xyz](https://hacs.xyz) |
+| **Amber Electric** | 5-minute spot pricing | [Amber Electric](https://www.home-assistant.io/integrations/amber/) |
+| **Solcast** | Solar production forecast | [Solcast HACS](https://github.com/oziee/ha-solcast-solar) |
+| **Tesla Powerwall** | Battery control | [Teslemetry](https://github.com/Teslemetry/ha-teslemetry) or similar |
+| **Weather** | Temperature forecast (optional) | Any HA weather entity |
 
 ## Installation
 
 ### HACS (Recommended)
-1. Add this repository as a custom repository in HACS
-2. Install "House Battery Control"
-3. Restart Home Assistant
-4. Add integration: **Settings → Devices → Add Integration → House Battery Control**
+
+1. Open HACS in Home Assistant
+2. Click the **⋮** menu → **Custom repositories**
+3. Add: `https://github.com/RangeyRover/home-battery-control` (Category: **Integration**)
+4. Search for **House Battery Control** and click **Download**
+5. Restart Home Assistant
+6. Go to **Settings → Devices & Services → Add Integration → House Battery Control**
 
 ### Manual
-```bash
-# Copy to your HA config directory
-cp -r custom_components/house_battery_control /config/custom_components/
 
-# Restart HA
+```bash
+cp -r custom_components/house_battery_control /config/custom_components/
 ha core restart
 ```
 
-## Dashboard
-
-After setup, browse to `http://<ha-ip>:8123/hbc` for:
-- **Power flow diagram** — Real-time SVG showing Grid ↔ Battery ↔ Solar ↔ House
-- **24-hour plan table** — Price, FSM state, forecasts, costs per 5-min interval
-- **JSON API** — `/hbc/api/status` and `/hbc/api/ping`
-
 ## Configuration
 
-The integration uses a 3-step config flow:
+The integration uses a 3-step config flow. For full details on every field, see [docs/configuration.md](docs/configuration.md).
 
-| Step | Entities |
-| :--- | :--- |
-| Telemetry | Battery SoC, Battery Power, Solar Power, Grid Power (with inversion options) |
-| Energy & Metrics | Load/Import/Export today, temperature thresholds, battery capacity, tariff & weather entities |
-| Control | Grid charging switch, operation mode select |
+| Step | What You Configure |
+|---|---|
+| **1. Telemetry** | Battery SoC, Battery Power, Solar Power, Grid Power sensors (with inversion options) |
+| **2. Energy & Metrics** | Cumulative energy sensors, temperature thresholds, battery specs, tariff & weather entities |
+| **3. Control** | Charge/discharge scripts, panel visibility toggle |
+
+You can also configure via YAML import on Step 1.
+
+## Verifying It Works
+
+After configuration:
+
+1. **Sidebar** — Look for the **HBC** entry (battery icon) in the sidebar
+2. **Panel** — Click it to see the power flow diagram and system status
+3. **Sensors** — Check **Settings → Devices → House Battery Control** for `sensor.hbc_state` and `sensor.hbc_projected_cost`
+4. **API** — Visit `/hbc/api/status` (requires admin auth) for full diagnostic JSON
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [Configuration Reference](docs/configuration.md) | Every config option explained |
+| [How It Works](docs/how-it-works.md) | Data pipeline, solver objectives, I/O detail |
+| [Troubleshooting](docs/troubleshooting.md) | Common issues and fixes |
+| [Architecture](docs/architecture.md) | Module map and contributor guide |
 
 ## Development
 
 ```bash
-# Install dependencies
 pip install -r requirements_test.txt
-
-# Run tests
-python -m pytest tests/ -q
-
-# Run linter
+python -m pytest tests/ -v      # 133 tests
 ruff check custom_components/ tests/
 ```
 
 ## License
 
-MIT
+[MIT](LICENSE)
