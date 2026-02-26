@@ -158,3 +158,9 @@ All development must follow the **Spec-Kit TDD process**. No code changes withou
 4.  **Implement** (`@speckit.implement`)
 5.  **Check** (`@speckit.checker`) 
 6.  **Validate** (`@speckit.validate`)
+
+## 7. Versioning Strategy
+The project follows a strict branch-based versioning model:
+- **`main` Branch (Stable/Approved)**: Represents production-ready, fully validated code. Releases cut from `main` are formally approved stable versions (e.g., `v1.1.0`).
+- **Feature Branches (Beta/Pre-release)**: Ongoing feature development branches (`0xx-feature-name`) are strictly treated as beta builds. Any releases drafted from these branches MUST be tagged as pre-releases (e.g., `v1.1.0-beta.1`). 
+- **Tag Correlation**: The beta tag versioning must relate directly to the target stable release (i.e. if the branch is implementing features for the next `v1.1.0` release, its pre-releases are `v1.1.0-beta.X`).
