@@ -44,14 +44,23 @@ class PowerwallExecutor:
     def __init__(self, hass: HomeAssistant, config: dict[str, Any]) -> None:
         self._hass = hass
         self._config = config
+        # Requested state (always updated — for dashboard display)
         self._last_state: str | None = None
         self._last_limit: float = 0.0
+        # Executed state (only updated after successful command — for dedup)
+        self._last_executed_state: str | None = None
+        self._last_executed_limit: float = 0.0
         self._apply_count: int = 0
 
     @property
     def last_state(self) -> str | None:
-        """Return the last applied state."""
+        """Return the last requested state (for dashboard)."""
         return self._last_state
+
+    @property
+    def last_executed_state(self) -> str | None:
+        """Return the last actually executed state (for diagnostics)."""
+        return self._last_executed_state
 
     @property
     def apply_count(self) -> int:
@@ -61,25 +70,33 @@ class PowerwallExecutor:
     async def apply_state(self, state: str, limit_kw: float) -> None:
         """Apply a new FSM state to the Powerwall.
 
-        Deduplicates: if state and limit haven't changed, no action.
+        Always updates requested state for dashboard display.
+        Deduplicates against last EXECUTED state, not last requested state.
+        Observation mode suppresses execution without updating executed state.
         """
-        if state == self._last_state and limit_kw == self._last_limit:
-            _LOGGER.debug(f"State unchanged ({state}), skipping apply")
-            return
-
+        # Always update requested state (dashboard can show what FSM wants)
         self._last_state = state
         self._last_limit = limit_kw
-        self._apply_count += 1
 
-        # Observation mode: track state but do not execute commands
+        # Observation mode: track request but do not execute
         if self._config.get(CONF_OBSERVATION_MODE, False):
             _LOGGER.info(f"Observation mode — suppressing: {state} (limit: {limit_kw:.1f} kW)")
             return
 
+        # Dedup: only execute if different from last EXECUTED state
+        if state == self._last_executed_state and limit_kw == self._last_executed_limit:
+            _LOGGER.debug(f"State unchanged ({state}), skipping execute")
+            return
+
+        self._apply_count += 1
         _LOGGER.info(f"Applying state: {state} (limit: {limit_kw:.1f} kW)")
 
         # Execute the actual HA service calls
         await self._async_execute_commands(state, limit_kw)
+
+        # Only update executed state AFTER successful execution
+        self._last_executed_state = state
+        self._last_executed_limit = limit_kw
 
     async def _async_execute_commands(self, state: str, limit_kw: float) -> None:
         """Determine and invoke which HA services to call for a given state.

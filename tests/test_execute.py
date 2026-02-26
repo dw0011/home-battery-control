@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from custom_components.house_battery_control.const import (
+    CONF_OBSERVATION_MODE,
     CONF_SCRIPT_CHARGE,
     CONF_SCRIPT_CHARGE_STOP,
     CONF_SCRIPT_DISCHARGE,
@@ -156,3 +157,72 @@ async def test_get_command_summary(executor):
     summary = executor.get_command_summary()
     assert isinstance(summary, str)
     assert len(summary) > 0
+
+
+# --- Observation mode tests (Feature 009) ---
+
+
+@pytest.mark.asyncio
+async def test_observation_mode_suppresses_execution(mock_hass):
+    """Commands should NOT be called when observation_mode is True."""
+    config = {
+        CONF_SCRIPT_CHARGE: "script.force_charge",
+        CONF_OBSERVATION_MODE: True,
+    }
+    executor = PowerwallExecutor(mock_hass, config)
+    await executor.apply_state(STATE_CHARGE_GRID, limit_kw=6.3)
+
+    # State should be tracked for dashboard
+    assert executor.last_state == STATE_CHARGE_GRID
+    # But no service call should be made
+    mock_hass.services.async_call.assert_not_called()
+    # Executed state should remain None
+    assert executor.last_executed_state is None
+    # Apply count should NOT increment (no actual execution)
+    assert executor.apply_count == 0
+
+
+@pytest.mark.asyncio
+async def test_observation_mode_exit_triggers_execution(mock_hass):
+    """Toggling observation_mode OFF should allow the next call to execute."""
+    config = {
+        CONF_SCRIPT_CHARGE: "script.force_charge",
+        CONF_OBSERVATION_MODE: True,
+    }
+    executor = PowerwallExecutor(mock_hass, config)
+
+    # Call while in observation mode — suppressed
+    await executor.apply_state(STATE_CHARGE_GRID, limit_kw=6.3)
+    mock_hass.services.async_call.assert_not_called()
+
+    # Toggle observation mode OFF
+    config[CONF_OBSERVATION_MODE] = False
+
+    # Same state called again — should NOW execute because _last_executed_state is None
+    await executor.apply_state(STATE_CHARGE_GRID, limit_kw=6.3)
+    mock_hass.services.async_call.assert_called_with(
+        "script", "turn_on", {"entity_id": "script.force_charge"}
+    )
+    assert executor.apply_count == 1
+    assert executor.last_executed_state == STATE_CHARGE_GRID
+
+
+@pytest.mark.asyncio
+async def test_observation_mode_dedup_after_real_execution(mock_hass):
+    """After real execution, same state should be deduped normally."""
+    config = {
+        CONF_SCRIPT_CHARGE: "script.force_charge",
+        CONF_OBSERVATION_MODE: False,
+    }
+    executor = PowerwallExecutor(mock_hass, config)
+
+    # First call — executes
+    await executor.apply_state(STATE_CHARGE_GRID, limit_kw=6.3)
+    assert executor.apply_count == 1
+    mock_hass.services.async_call.reset_mock()
+
+    # Second call with same state — deduped
+    await executor.apply_state(STATE_CHARGE_GRID, limit_kw=6.3)
+    assert executor.apply_count == 1  # No increment
+    mock_hass.services.async_call.assert_not_called()
+
