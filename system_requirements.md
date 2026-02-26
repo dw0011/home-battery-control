@@ -49,10 +49,10 @@ The status API must return the **full coordinator data** for debugging:
 
 ### 3.1. Grid Tariff (Amber Electric Schema)
 Amber Electric provides separate import and export price forecasts.
--   The current price is the entity's `state`. 
--   **CRITICAL**: The forecast is found specifically in `attributes.forecast` (must check this exact key, adhering to the Amber schema).
+-   The current instantaneous price is defined by the explicitly configured `CONF_CURRENT_IMPORT_PRICE_ENTITY` and `CONF_CURRENT_EXPORT_PRICE_ENTITY` states. If these are not configured, the system gracefully falls back to using the forecast arrays to determine `t=0` pricing.
+-   **CRITICAL**: The future 24-hour forecast array is found specifically in `attributes.forecast` of the `CONF_IMPORT_PRICE_ENTITY` and `CONF_EXPORT_PRICE_ENTITY` (must check this exact key, adhering to the Amber schema).
 
-Each interval features:
+Each interval inside the forecast array features:
 ```json
 [
   {
@@ -114,6 +114,7 @@ The integration maps logical FSM states to four explicit Home Assistant script e
 - **Charge Stop Script**: Called to stop forced charging.
 - **Discharge Battery Script**: Called to initiate forced discharging.
 - **Discharge Stop Script**: Called to stop forced discharging.
+- **No-Import Periods**: Users can string-define restricted periods (e.g., `15:00-21:00`). During these times, the LP solver is mathematically forced (by bounding `grid_import_kw = 0.0`) to avoid grid imports, bypassing all arbitrage charging logic.
 
 #### 3.7. System Constants (Calibration)
 - **Total Capacity**: 27.0 kWh
