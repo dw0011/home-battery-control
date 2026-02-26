@@ -80,6 +80,8 @@ The `RatesManager` reads from two HA sensor entities:
 - **Import price sensor** — `forecast` attribute containing future buy prices
 - **Export price sensor** — `forecast` attribute containing future sell/feed-in prices
 
+Additionally, the `Coordinator` itself explicitly overrides the immediate `t=0` calculations if **Current Import Price Entity** or **Current Export Price Entity** are configured. This guarantees the FSM responds to instantaneous price spikes (like Amber's 5-minute pre-dispatch) without waiting for the 30-minute forecast array to align.
+
 Each interval is parsed into a `RateInterval`:
 
 ```
@@ -173,6 +175,7 @@ Weather Interval {
 | Max charge/discharge rate | `battery_rate_max` | kW | 6.3 |
 | Inverter limit | `inverter_limit` | kW | 10.0 |
 | Reserve SoC floor | `reserve_soc` | % | 0.0 |
+| No-Import Periods | `no_import_periods` | String | "" |
 
 These are used to construct a `FakeBattery` model that the solver uses to simulate battery behaviour over the 24-hour horizon.
 
@@ -228,6 +231,7 @@ For each 5-minute interval, the solver chooses:
 4. **Capacity**: Total stored energy cannot exceed `battery_capacity`.
 5. **Efficiency losses**: Charging and discharging have 95% round-trip efficiency baked in.
 6. **Reserve floor**: SoC must not drop below the configured `reserve_soc` at any interval.
+7. **No-Import Periods**: Grid import is bounded to strictly `0.0 kW` during user-defined textual time spans (e.g. `15:00-21:00`), bypassing arbitrage logic.
 
 ### What the Solver Does NOT Do
 

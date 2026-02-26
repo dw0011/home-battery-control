@@ -70,8 +70,10 @@ These adjust the load forecast based on temperature. If your house uses more pow
 
 | Key | Label | Default | Notes |
 |---|---|---|---|
-| `import_price_entity` | Import Price | — | Amber Electric import price sensor. Reports c/kWh with `forecast` attribute. |
-| `export_price_entity` | Export Price | — | Amber Electric export/feed-in price sensor. Reports c/kWh with `forecast` attribute. |
+| `import_price_entity` | Import Price Forecast | — | Amber Electric import price sensor. Reports c/kWh with `forecast` attribute. |
+| `export_price_entity` | Export Price Forecast | — | Amber Electric export/feed-in price sensor. Reports c/kWh with `forecast` attribute. |
+| `current_import_price_entity` | Current Import Price | — | **Optional:** Sensor tracking Amber's instantaneous/live import price. Decouples step 0 from forecast arrays. |
+| `current_export_price_entity` | Current Export Price | — | **Optional:** Sensor tracking Amber's instantaneous/live export price. |
 | `weather_entity` | Weather Entity | — | Any HA weather entity providing temperature forecasts. |
 | `solcast_today_entity` | Solcast Today | `sensor.solcast_pv_forecast_today` | Solcast PV forecast for today. |
 | `solcast_tomorrow_entity` | Solcast Tomorrow | `sensor.solcast_pv_forecast_tomorrow` | Solcast PV forecast for tomorrow. |
@@ -88,6 +90,7 @@ Scripts that HBC calls to control the Powerwall. Leave blank for observation/deb
 | `script_charge_stop` | Script: Stop Charging | Called when FSM exits charging states |
 | `script_discharge` | Script: Discharge to Grid | Called when FSM enters `DISCHARGE_GRID` state |
 | `script_discharge_stop` | Script: Stop Discharging | Called when FSM exits discharge states |
+| `no_import_periods` | No-Import Periods | String format periods (e.g. `15:00-21:00`) restricting LP arbitrage charging. |
 | `panel_admin_only` | Panel Visible to Admins Only | Toggle: ON = sidebar entry visible to admin users only (default). OFF = visible to all users. |
 
 ---
