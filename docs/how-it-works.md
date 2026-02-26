@@ -202,6 +202,25 @@ class FSMContext:
 
 ---
 
+## Financial Tracking & Persistence
+
+HBC tracks the financial performance of your battery using two key metrics that persist across Home Assistant restarts:
+
+1. **Cumulative Cost ($)**: The running total of money spent (or earned, if negative) since the integration was first installed. This is calculated internally by analyzing the actual grid interactions (import/export) during each 5-minute interval.
+2. **Acquisition Cost (c/kWh)**: The blended average cost of the energy currently sitting in your battery. 
+
+### Dynamic Acquisition Cost Calculation
+The system calculates the true cost of stored energy rather than just using a static figure. Every 5 minutes, if the battery is actively charging, HBC calculates the cost of the raw energy entering the battery:
+- **Grid Charging**: Valued at the current Amber import price.
+- **Solar Charging**: Valued at the *opportunity cost* (what you could have earned if you exported that solar to the Amber grid instead).
+
+This incoming energy cost is then mathematically blended (weighted average) against the existing energy in the battery to update the `acquisition_cost`. This dynamic acquisition cost is fed into the FSM solver as a floor price, preventing the battery from exporting energy for less than it cost to acquire.
+
+### Persistence Mechanism
+Both `cumulative_cost` and `acquisition_cost` are securely written to Home Assistant's internal `Store` API (`.storage/house_battery_control.cost_data`). The integration utilizes delayed JSON writes to buffer I/O operations, ensuring data survives system reboots and updates without degrading Home Assistant's performance.
+
+---
+
 ## What the Solver Does
 
 The solver (`LinearBatteryController` in `fsm/lin_fsm.py`) takes the `FSMContext` and calculates the mathematically optimal battery schedule. Here's what it tries to achieve and what rules it follows:
