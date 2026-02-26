@@ -1,12 +1,13 @@
 """Tests for Linear Programming FSM implementation (lin_fsm)."""
 
+from datetime import datetime, time, timedelta, timezone
+
 import pytest
-from datetime import time, datetime, timezone, timedelta
 from custom_components.house_battery_control.fsm.base import FSMContext
 from custom_components.house_battery_control.fsm.lin_fsm import (
     LinearBatteryStateMachine,
-    _parse_no_import_periods,
     _is_in_no_import_period,
+    _parse_no_import_periods,
 )
 
 
@@ -61,10 +62,10 @@ def test_linear_solver_target_soc_calculation(base_context):
         base_context.forecast_price[i]["export_price"] = 0.00
         base_context.forecast_load[i]["kw"] = 5.0  # high load
         base_context.forecast_solar[i]["kw"] = 0.0  # no solar
-    
+
     base_context.current_price = 0.01
     base_context.current_export_price = 0.00
-    
+
     # But later in the day, import goes back up to force it to charge now
     for i in range(14, 28):
         base_context.forecast_price[i]["import_price"] = 50.0

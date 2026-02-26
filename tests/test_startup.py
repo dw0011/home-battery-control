@@ -41,6 +41,7 @@ async def test_coordinator_refreshes_on_ha_start():
         mock_coordinator = MagicMock()
         mock_coordinator.async_request_refresh = AsyncMock()
         mock_coordinator.async_config_entry_first_refresh = AsyncMock()
+        mock_coordinator.async_load_stored_costs = AsyncMock()
         mock_coord_class.return_value = mock_coordinator
 
         # Ensure the mock hass has an awaitable for entry setups

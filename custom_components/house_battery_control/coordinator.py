@@ -8,8 +8,8 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -80,7 +80,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
         self.config = config
         self._update_count = 0
         self.dp_target_soc = None
-        
+
         self.cumulative_cost: float = 0.0
         self.acquisition_cost: float = 0.10
         self.store = Store(hass, 1, "house_battery_control.cost_data")
@@ -404,7 +404,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             aligned_solar = []
             rates_timeline = self.rates.get_rates()
             fallback_len = len(rates_timeline) if rates_timeline else 288
-            
+
             if rates_timeline and solar_forecast:
                 for rate in rates_timeline:
                     rate_start = rate["start"]
@@ -420,7 +420,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             else:
                 # Provide a zeroed array of exact length to prevent FSM aborting via min(lengths)
                 aligned_solar = [{"kw": 0.0} for _ in range(fallback_len)]
-                
+
             # Ensure load_forecast is populated to identical precision length
             if not load_forecast:
                 load_forecast = [{"kw": 0.0} for _ in range(fallback_len)]
@@ -476,43 +476,43 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             interval_cost = 0.0
             future_plan = fsm_result.future_plan or []
             rates_list = self.rates.get_rates()
-            
+
             old_cumulative = self.cumulative_cost
             old_acquisition = self.acquisition_cost
-            
+
             if future_plan and rates_list:
                 f_net_grid = future_plan[0].get("net_grid", 0.0)
                 price = rates_list[0].get("import_price", rates_list[0].get("price", 0.0))
                 export_price = rates_list[0].get("export_price", price * 0.8)
-                
+
                 if f_net_grid > 0:
                     interval_cost = f_net_grid * price * (5 / 60)
                 else:
                     interval_cost = f_net_grid * export_price * (5 / 60)
-                
+
                 self.cumulative_cost += interval_cost
-                
+
                 # Update Acquisition Cost (Weighted Average)
                 actual_pv = future_plan[0].get("pv", 0.0)
                 actual_load = future_plan[0].get("load", 0.0)
-                
+
                 # Power entering battery (positive = charging)
                 battery_kw = actual_pv + f_net_grid - actual_load
-                
+
                 if battery_kw > 0.01:
                     # We are charging
                     energy_added_kwh = battery_kw * (5 / 60)
-                    
+
                     pv_to_batt = min(actual_pv, battery_kw)
                     grid_to_batt = max(0, battery_kw - actual_pv)
-                    
+
                     cost_of_charge = (pv_to_batt * export_price + grid_to_batt * price) * (5 / 60)
-                    
+
                     current_energy_kwh = (soc / 100.0) * self.config.get(CONF_BATTERY_CAPACITY, 27.0)
                     current_value = current_energy_kwh * self.acquisition_cost
-                    
+
                     new_total_energy = current_energy_kwh + energy_added_kwh
-                    
+
                     if new_total_energy > 0:
                         self.acquisition_cost = (current_value + cost_of_charge) / new_total_energy
 

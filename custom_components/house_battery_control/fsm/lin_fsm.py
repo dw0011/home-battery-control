@@ -12,7 +12,7 @@ except ImportError:
 import logging
 import math
 import statistics
-from datetime import datetime, time, timedelta
+from datetime import time
 
 import numpy as np
 from scipy.optimize import linprog

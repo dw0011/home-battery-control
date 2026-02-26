@@ -495,19 +495,20 @@ def test_plan_table_interval_cost_calculation():
 async def test_coordinator_load_stored_costs_empty(mock_hass):
     """Spec US1: Ensure empty store defaults to 0.00 and 0.10."""
     from unittest.mock import AsyncMock, patch
+
     from custom_components.house_battery_control.coordinator import HBCDataUpdateCoordinator
 
     with patch("custom_components.house_battery_control.coordinator.Store") as mock_store_class:
         mock_store = mock_store_class.return_value
         mock_store.async_load = AsyncMock(return_value=None)
-        
+
         with (
             patch("custom_components.house_battery_control.coordinator.async_track_state_change_event"),
             patch("custom_components.house_battery_control.coordinator.DataUpdateCoordinator.__init__", return_value=None)
         ):
             coordinator = HBCDataUpdateCoordinator(mock_hass, "entry123", {})
             await coordinator.async_load_stored_costs()
-            
+
             assert coordinator.cumulative_cost == 0.0
             assert coordinator.acquisition_cost == 0.10
 
@@ -516,6 +517,7 @@ async def test_coordinator_load_stored_costs_empty(mock_hass):
 async def test_coordinator_load_stored_costs_valid(mock_hass):
     """Spec US1: Ensure valid store restores exact memory equivalents."""
     from unittest.mock import AsyncMock, patch
+
     from custom_components.house_battery_control.coordinator import HBCDataUpdateCoordinator
 
     valid_data = {
@@ -526,13 +528,13 @@ async def test_coordinator_load_stored_costs_valid(mock_hass):
     with patch("custom_components.house_battery_control.coordinator.Store") as mock_store_class:
         mock_store = mock_store_class.return_value
         mock_store.async_load = AsyncMock(return_value=valid_data)
-        
+
         with (
             patch("custom_components.house_battery_control.coordinator.async_track_state_change_event"),
             patch("custom_components.house_battery_control.coordinator.DataUpdateCoordinator.__init__", return_value=None)
         ):
             coordinator = HBCDataUpdateCoordinator(mock_hass, "entry123", {})
             await coordinator.async_load_stored_costs()
-            
+
             assert coordinator.cumulative_cost == 5.42
             assert coordinator.acquisition_cost == 0.12
