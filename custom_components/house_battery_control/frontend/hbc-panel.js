@@ -88,6 +88,13 @@ class HBCPanel extends LitElement {
     localStorage.setItem("hbc_sensors_hidden", this._sensorsHidden);
   }
 
+  _toggleMenu() {
+    this.dispatchEvent(new Event("hass-toggle-menu", {
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
   _calculateSummaryStats() {
     const plan = this._data.plan || [];
     if (plan.length === 0) {
@@ -504,24 +511,29 @@ class HBCPanel extends LitElement {
     }
 
     return html`
-      <div class="root">
-        <div class="header">
-          <h1>⚡ House Battery Control</h1>
-          <div class="tabs">
-            <button
-              class="${this._activeTab === "dashboard" ? "active" : ""}"
-              @click=${() => this._switchTab("dashboard")}
-            >
-              Dashboard
-            </button>
-            <button
-              class="${this._activeTab === "plan" ? "active" : ""}"
-              @click=${() => this._switchTab("plan")}
-            >
-              Plan
-            </button>
-          </div>
+      <div class="toolbar">
+        <button class="menu-btn" @click=${this._toggleMenu} aria-label="Menu">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+            <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
+          </svg>
+        </button>
+        <span class="toolbar-title">House Battery Control</span>
+        <div class="tabs">
+          <button
+            class="${this._activeTab === "dashboard" ? "active" : ""}"
+            @click=${() => this._switchTab("dashboard")}
+          >
+            Dashboard
+          </button>
+          <button
+            class="${this._activeTab === "plan" ? "active" : ""}"
+            @click=${() => this._switchTab("plan")}
+          >
+            Plan
+          </button>
         </div>
+      </div>
+      <div class="root">
         ${this._activeTab === "dashboard"
         ? this._renderDashboard()
         : this._renderPlan()}
@@ -539,18 +551,42 @@ class HBCPanel extends LitElement {
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           sans-serif;
       }
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 16px;
+        background: #1a1a3e;
+        border-bottom: 1px solid #2a2a5e;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+      .menu-btn {
+        background: none;
+        border: none;
+        color: #e0e0e0;
+        cursor: pointer;
+        padding: 8px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.2s;
+      }
+      .menu-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+      .toolbar-title {
+        color: #00d4ff;
+        font-size: 18px;
+        font-weight: 600;
+        flex: 1;
+      }
       .root {
         max-width: 1200px;
         margin: 0 auto;
         padding: 20px;
-      }
-      .header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 20px;
-        flex-wrap: wrap;
-        gap: 12px;
       }
       h1 {
         color: #00d4ff;
