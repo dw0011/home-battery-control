@@ -36,6 +36,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     coordinator = HBCDataUpdateCoordinator(hass, entry.entry_id, config_data)
 
+    await coordinator.async_load_stored_costs()
+
     # Perform first refresh
     await coordinator.async_config_entry_first_refresh()
 

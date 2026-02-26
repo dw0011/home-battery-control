@@ -9,6 +9,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -79,6 +80,10 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
         self.config = config
         self._update_count = 0
         self.dp_target_soc = None
+        
+        self.cumulative_cost: float = 0.0
+        self.acquisition_cost: float = 0.10
+        self.store = Store(hass, 1, "house_battery_control.cost_data")
 
         # Initialize Managers
         self.rates = RatesManager(
@@ -117,6 +122,17 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             async_track_state_change_event(
                 hass, self._tracked_entities, self._async_on_state_change
             )
+
+    async def async_load_stored_costs(self) -> None:
+        """Load persistent cost data from the .storage directory."""
+        data = await self.store.async_load()
+        if data:
+            self.cumulative_cost = data.get("cumulative_cost", 0.0)
+            self.acquisition_cost = data.get("acquisition_cost", 0.10)
+        else:
+            self.cumulative_cost = 0.0
+            self.acquisition_cost = 0.10
+        _LOGGER.debug("Loaded HBC costs: Cumulative=$%s, Acquisition=%s c/kWh", self.cumulative_cost, self.acquisition_cost)
 
     async def _async_on_state_change(self, event) -> None:
         """Trigger an immediate plan update when a vital telemetry entity changes state."""
@@ -413,7 +429,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 for _ in range(fallback_len - len(load_forecast)):
                     load_forecast.append({"kw": 0.0})
 
-            # Build FSM context and run decision logic
+                # Build FSM context and run decision logic
             current_import_entity = self.config.get(CONF_CURRENT_IMPORT_PRICE_ENTITY)
             if current_import_entity:
                 current_price = self._get_sensor_value(current_import_entity)
@@ -442,7 +458,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     "reserve_soc": self.config.get(CONF_RESERVE_SOC, 0.0),
                     "no_import_periods": self.config.get(CONF_NO_IMPORT_PERIODS, ""),
                 },
-                acquisition_cost=0.06,  # Explicit fallback for Live HA integration
+                acquisition_cost=self.acquisition_cost,
                 current_export_price=current_export_price,
             )
             # Run decision logic in background thread
@@ -455,6 +471,60 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
 
             # Store native DP target SOC state
             self.dp_target_soc = getattr(fsm_result, "target_soc", None)
+
+            # --- Update historical cost trackers based on immediate 5min interval ---
+            interval_cost = 0.0
+            future_plan = fsm_result.future_plan or []
+            rates_list = self.rates.get_rates()
+            
+            old_cumulative = self.cumulative_cost
+            old_acquisition = self.acquisition_cost
+            
+            if future_plan and rates_list:
+                f_net_grid = future_plan[0].get("net_grid", 0.0)
+                price = rates_list[0].get("import_price", rates_list[0].get("price", 0.0))
+                export_price = rates_list[0].get("export_price", price * 0.8)
+                
+                if f_net_grid > 0:
+                    interval_cost = f_net_grid * price * (5 / 60)
+                else:
+                    interval_cost = f_net_grid * export_price * (5 / 60)
+                
+                self.cumulative_cost += interval_cost
+                
+                # Update Acquisition Cost (Weighted Average)
+                actual_pv = future_plan[0].get("pv", 0.0)
+                actual_load = future_plan[0].get("load", 0.0)
+                
+                # Power entering battery (positive = charging)
+                battery_kw = actual_pv + f_net_grid - actual_load
+                
+                if battery_kw > 0.01:
+                    # We are charging
+                    energy_added_kwh = battery_kw * (5 / 60)
+                    
+                    pv_to_batt = min(actual_pv, battery_kw)
+                    grid_to_batt = max(0, battery_kw - actual_pv)
+                    
+                    cost_of_charge = (pv_to_batt * export_price + grid_to_batt * price) * (5 / 60)
+                    
+                    current_energy_kwh = (soc / 100.0) * self.config.get(CONF_BATTERY_CAPACITY, 27.0)
+                    current_value = current_energy_kwh * self.acquisition_cost
+                    
+                    new_total_energy = current_energy_kwh + energy_added_kwh
+                    
+                    if new_total_energy > 0:
+                        self.acquisition_cost = (current_value + cost_of_charge) / new_total_energy
+
+            # Save to persistent storage if values drifted during this tick
+            if abs(self.cumulative_cost - old_cumulative) > 0.0001 or abs(self.acquisition_cost - old_acquisition) > 0.0001:
+                self.store.async_delay_save(
+                    lambda: {
+                        "cumulative_cost": self.cumulative_cost,
+                        "acquisition_cost": self.acquisition_cost
+                    },
+                    delay=1.0
+                )
 
             # Return data for sensors and dashboard
             self._update_count += 1
@@ -492,8 +562,10 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     load_forecast,
                     self.weather.get_forecast(),
                     soc,
-                    fsm_result.future_plan or [],
+                    future_plan,
                 ),
+                "cumulative_cost": round(self.cumulative_cost, 2),
+                "acquisition_cost": round(self.acquisition_cost, 4),
                 "sensors": self._build_sensor_diagnostics(),
                 "last_update": dt_util.utcnow().isoformat(),
                 "update_count": self._update_count,
