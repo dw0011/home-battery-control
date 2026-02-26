@@ -31,6 +31,7 @@ from .const import (
     CONF_LOAD_SENSITIVITY_LOW_TEMP,
     CONF_LOAD_TODAY_ENTITY,
     CONF_NO_IMPORT_PERIODS,
+    CONF_OBSERVATION_MODE,
     CONF_RESERVE_SOC,
     CONF_SCRIPT_CHARGE,
     CONF_SCRIPT_CHARGE_STOP,
@@ -460,6 +461,9 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 "capacity": self.config.get(CONF_BATTERY_CAPACITY, 27.0),
                 "charge_rate_max": self.config.get(CONF_BATTERY_CHARGE_RATE_MAX, 6.3),
                 "inverter_limit": self.config.get(CONF_INVERTER_LIMIT_MAX, 10.0),
+                # Config flags for dashboard visibility
+                "no_import_periods": self.config.get(CONF_NO_IMPORT_PERIODS, ""),
+                "observation_mode": self.config.get(CONF_OBSERVATION_MODE, False),
                 # FSM results
                 "state": fsm_result.state,
                 "reason": fsm_result.reason,

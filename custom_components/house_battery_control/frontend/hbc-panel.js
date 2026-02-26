@@ -150,6 +150,8 @@ class HBCPanel extends LitElement {
     const export_today = d.export_today !== undefined ? d.export_today : 0;
     const state = d.state || "IDLE";
     const reason = d.reason || "";
+    const noImportPeriods = d.no_import_periods || "";
+    const observationMode = d.observation_mode || false;
     const summaryStats = this._calculateSummaryStats();
 
     return html`
@@ -202,6 +204,12 @@ class HBCPanel extends LitElement {
           </div>
         </div>
       </div>
+      ${(noImportPeriods || observationMode) ? html`
+      <div class="constraints-bar">
+        ${observationMode ? html`<span class="constraint-badge observation">👁 Observation Mode</span>` : ''}
+        ${noImportPeriods ? html`<span class="constraint-badge no-import">🚫 No-Import: ${noImportPeriods}</span>` : ''}
+      </div>
+      ` : ''}
       <div class="card">
         <h2>24-Hour Forecast Summary</h2>
         <div class="status-grid">
@@ -700,6 +708,29 @@ class HBCPanel extends LitElement {
         color: #0f0f23;
         font-weight: 700;
         font-size: 14px;
+      }
+
+      /* Active Constraints Bar */
+      .constraints-bar {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        padding: 8px 0;
+      }
+      .constraint-badge {
+        display: inline-block;
+        padding: 6px 14px;
+        border-radius: 16px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .constraint-badge.no-import {
+        background: linear-gradient(135deg, #ff8c00, #cc6600);
+        color: #fff;
+      }
+      .constraint-badge.observation {
+        background: linear-gradient(135deg, #ff4444, #cc0000);
+        color: #fff;
       }
 
       /* Tables */
