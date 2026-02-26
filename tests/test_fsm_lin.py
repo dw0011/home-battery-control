@@ -61,6 +61,10 @@ def test_linear_solver_target_soc_calculation(base_context):
         base_context.forecast_price[i]["export_price"] = 0.00
         base_context.forecast_load[i]["kw"] = 5.0  # high load
         base_context.forecast_solar[i]["kw"] = 0.0  # no solar
+    
+    base_context.current_price = 0.01
+    base_context.current_export_price = 0.00
+    
     # But later in the day, import goes back up to force it to charge now
     for i in range(14, 28):
         base_context.forecast_price[i]["import_price"] = 50.0
@@ -88,6 +92,8 @@ def test_inverter_physical_bounds_limit_kw(base_context):
     # Make strictly step 0 the cheapest so the LP solves deterministically
     base_context.forecast_price[0]["import_price"] = 0.01
     base_context.forecast_price[0]["export_price"] = 0.01
+    base_context.current_price = 0.01
+    base_context.current_export_price = 0.01
 
     # Must have a future positive price to make holding it worthwhile
     base_context.forecast_price[20]["import_price"] = 100.0

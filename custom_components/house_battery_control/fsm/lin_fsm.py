@@ -313,6 +313,11 @@ class LinearBatteryStateMachine(BatteryStateMachine):
         price_buy = [0.0] * number_step
         price_sell = [0.0] * number_step
         for t in range(number_step):
+            if t == 0:
+                price_buy[t] = float(context.current_price)
+                price_sell[t] = float(context.current_export_price)
+                continue
+
             idx = min(t, len(context.forecast_price) - 1) if context.forecast_price else 0
             if idx < len(context.forecast_price):
                 entry = context.forecast_price[idx]

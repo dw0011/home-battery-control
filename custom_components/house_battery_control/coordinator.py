@@ -17,6 +17,8 @@ from .const import (
     CONF_BATTERY_POWER_ENTITY,
     CONF_BATTERY_POWER_INVERT,
     CONF_BATTERY_SOC_ENTITY,
+    CONF_CURRENT_EXPORT_PRICE_ENTITY,
+    CONF_CURRENT_IMPORT_PRICE_ENTITY,
     CONF_EXPORT_PRICE_ENTITY,
     CONF_EXPORT_TODAY_ENTITY,
     CONF_GRID_ENTITY,
@@ -139,6 +141,8 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             CONF_BATTERY_POWER_ENTITY,
             CONF_SOLAR_ENTITY,
             CONF_GRID_ENTITY,
+            CONF_CURRENT_IMPORT_PRICE_ENTITY,
+            CONF_CURRENT_EXPORT_PRICE_ENTITY,
             CONF_IMPORT_PRICE_ENTITY,
             CONF_EXPORT_PRICE_ENTITY,
             CONF_WEATHER_ENTITY,
@@ -410,7 +414,17 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     load_forecast.append({"kw": 0.0})
 
             # Build FSM context and run decision logic
-            current_price = self.rates.get_import_price_at(dt_util.now())
+            current_import_entity = self.config.get(CONF_CURRENT_IMPORT_PRICE_ENTITY)
+            if current_import_entity:
+                current_price = self._get_sensor_value(current_import_entity)
+            else:
+                current_price = self.rates.get_import_price_at(dt_util.now())
+
+            current_export_entity = self.config.get(CONF_CURRENT_EXPORT_PRICE_ENTITY)
+            if current_export_entity:
+                current_export_price = self._get_sensor_value(current_export_entity)
+            else:
+                current_export_price = self.rates.get_export_price_at(dt_util.now())
 
             fsm_context = FSMContext(
                 soc=soc,
@@ -429,6 +443,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     "no_import_periods": self.config.get(CONF_NO_IMPORT_PERIODS, ""),
                 },
                 acquisition_cost=0.06,  # Explicit fallback for Live HA integration
+                current_export_price=current_export_price,
             )
             # Run decision logic in background thread
             fsm_result = await self.hass.async_add_executor_job(

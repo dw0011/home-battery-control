@@ -30,6 +30,8 @@ from .const import (
     CONF_BATTERY_POWER_ENTITY,
     CONF_BATTERY_POWER_INVERT,
     CONF_BATTERY_SOC_ENTITY,
+    CONF_CURRENT_EXPORT_PRICE_ENTITY,
+    CONF_CURRENT_IMPORT_PRICE_ENTITY,
     CONF_EXPORT_PRICE_ENTITY,
     CONF_EXPORT_TODAY_ENTITY,
     CONF_GRID_ENTITY,
@@ -203,6 +205,12 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         EntitySelectorConfig(domain="sensor")
                     ),
                     vol.Required(CONF_EXPORT_PRICE_ENTITY): EntitySelector(
+                        EntitySelectorConfig(domain="sensor")
+                    ),
+                    vol.Optional(CONF_CURRENT_IMPORT_PRICE_ENTITY): EntitySelector(
+                        EntitySelectorConfig(domain="sensor")
+                    ),
+                    vol.Optional(CONF_CURRENT_EXPORT_PRICE_ENTITY): EntitySelector(
                         EntitySelectorConfig(domain="sensor")
                     ),
                     vol.Required(CONF_WEATHER_ENTITY): EntitySelector(
@@ -397,6 +405,14 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
                     ): EntitySelector(EntitySelectorConfig(domain="sensor")),
                     vol.Required(
                         CONF_EXPORT_PRICE_ENTITY, default=self._data.get(CONF_EXPORT_PRICE_ENTITY)
+                    ): EntitySelector(EntitySelectorConfig(domain="sensor")),
+                    vol.Optional(
+                        CONF_CURRENT_IMPORT_PRICE_ENTITY,
+                        description={"suggested_value": self._data.get(CONF_CURRENT_IMPORT_PRICE_ENTITY)},
+                    ): EntitySelector(EntitySelectorConfig(domain="sensor")),
+                    vol.Optional(
+                        CONF_CURRENT_EXPORT_PRICE_ENTITY,
+                        description={"suggested_value": self._data.get(CONF_CURRENT_EXPORT_PRICE_ENTITY)},
                     ): EntitySelector(EntitySelectorConfig(domain="sensor")),
                     vol.Required(
                         CONF_WEATHER_ENTITY, default=self._data.get(CONF_WEATHER_ENTITY)
