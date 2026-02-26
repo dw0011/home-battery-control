@@ -46,7 +46,8 @@
                     "script_charge_stop": "Script: Stop Charging",
                     "script_discharge": "Script: Discharge to Grid",
                     "script_discharge_stop": "Script: Stop Discharging",
-                    "panel_admin_only": "Panel Visible to Admins Only"
+                    "panel_admin_only": "Panel Visible to Admins Only",
+                    "no_import_periods": "No-Import Periods (e.g. 15:00-21:00)"
                 }
             }
         }
@@ -105,7 +106,8 @@
                     "script_charge_stop": "Script: Stop Charging",
                     "script_discharge": "Script: Discharge to Grid",
                     "script_discharge_stop": "Script: Stop Discharging",
-                    "panel_admin_only": "Panel visible to admins only"
+                    "panel_admin_only": "Panel visible to admins only",
+                    "no_import_periods": "No-Import Periods (e.g. 15:00-21:00)"
                 }
             }
         }

@@ -37,7 +37,6 @@ from .const import (
     CONF_IMPORT_PRICE_ENTITY,
     CONF_IMPORT_TODAY_ENTITY,
     CONF_INVERTER_LIMIT_MAX,
-    CONF_NO_IMPORT_PERIODS,
     CONF_PANEL_ADMIN_ONLY,
     CONF_RESERVE_SOC,
     CONF_LOAD_HIGH_TEMP_THRESHOLD,
@@ -257,10 +256,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Optional(CONF_SCRIPT_DISCHARGE_STOP): EntitySelector(
                         EntitySelectorConfig(domain="script")
                     ),
-                    vol.Optional(
-                        CONF_NO_IMPORT_PERIODS,
-                        default="",
-                    ): TextSelector(TextSelectorConfig(type="text")),
                 }
             ),
         )
@@ -428,10 +423,6 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
             self._data[CONF_PANEL_ADMIN_ONLY] = user_input.pop(
                 CONF_PANEL_ADMIN_ONLY, DEFAULT_PANEL_ADMIN_ONLY
             )
-            # Persist no-import periods (Feature 010)
-            self._data[CONF_NO_IMPORT_PERIODS] = user_input.pop(
-                CONF_NO_IMPORT_PERIODS, ""
-            )
             # Handle script entities: strip empty values, store the rest
             for key in (
                 CONF_SCRIPT_CHARGE,
@@ -490,12 +481,6 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
                             CONF_PANEL_ADMIN_ONLY, DEFAULT_PANEL_ADMIN_ONLY
                         ),
                     ): BooleanSelector(),
-                    vol.Optional(
-                        CONF_NO_IMPORT_PERIODS,
-                        description={
-                            "suggested_value": self._data.get(CONF_NO_IMPORT_PERIODS, "")
-                        },
-                    ): TextSelector(TextSelectorConfig(type="text")),
                 }
             ),
         )

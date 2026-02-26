@@ -12,56 +12,11 @@ except ImportError:
 import logging
 import math
 import statistics
-from datetime import datetime, time, timedelta
 
 import numpy as np
 from scipy.optimize import linprog
 
 _LOGGER = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-#  No-Import Period helpers (Feature 010)
-# ---------------------------------------------------------------------------
-def _parse_no_import_periods(config_str: str) -> list[tuple[time, time]]:
-    """Parse comma-separated 'HH:MM-HH:MM' strings into (start, end) time tuples.
-
-    Returns empty list for empty/None input. Invalid entries are logged and skipped.
-    """
-    if not config_str or not config_str.strip():
-        return []
-    periods = []
-    for part in config_str.split(","):
-        part = part.strip()
-        if "-" not in part:
-            _LOGGER.warning(f"Invalid no-import period (no dash): '{part}'")
-            continue
-        try:
-            start_str, end_str = part.split("-", 1)
-            sh, sm = map(int, start_str.strip().split(":"))
-            eh, em = map(int, end_str.strip().split(":"))
-            periods.append((time(sh, sm), time(eh, em)))
-        except (ValueError, IndexError) as e:
-            _LOGGER.warning(f"Invalid no-import period '{part}': {e}")
-            continue
-    return periods
-
-
-def _is_in_no_import_period(t: time, periods: list[tuple[time, time]]) -> bool:
-    """Check if a local time falls within any no-import period.
-
-    Handles midnight-spanning windows (e.g. 22:00-06:00).
-    """
-    for start, end in periods:
-        if start <= end:
-            # Normal window: e.g. 15:00-21:00
-            if start <= t < end:
-                return True
-        else:
-            # Midnight wrap: e.g. 22:00-06:00
-            if t >= start or t < end:
-                return True
-    return False
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +70,6 @@ class LinearBatteryController:
         acquisition_cost: float = 0.0,
         raw_acquisition_cost: float = 0.0,
         reserve_soc: float = 0.0,
-        no_import_steps: set[int] | None = None,
     ):
         number_step = min(288, self.step)
 
@@ -142,16 +96,12 @@ class LinearBatteryController:
         obj = np.zeros(num_vars)
         bounds = []
 
-        _blocked = no_import_steps or set()
         for i in range(number_step):
             # Grid import: use raw price (can be negative = incentive to import)
             # FR-001: Solver must see the economic benefit of negative import prices
             # FR-002: Upper-bound g[i] during negative prices to prevent unbounded LP
             obj[g_off + i] = price_buy[i]
-            if i in _blocked:
-                # No-import period: force grid import to zero (Feature 010)
-                bounds.append((0.0, 0.0))
-            elif price_buy[i] < 0:
+            if price_buy[i] < 0:
                 # Physical bound: can't import more than load + battery charge rate
                 max_import = load_forecast[i] + charge_limit
                 bounds.append((0.0, max_import))
@@ -371,29 +321,6 @@ class LinearBatteryStateMachine(BatteryStateMachine):
         blended = (median_buy + context.acquisition_cost) / 2.0
         terminal_valuation = max(context.acquisition_cost, blended)
 
-        # --- No-Import Periods (Feature 010) ---
-        no_import_steps: set[int] = set()
-        nip_config = context.config.get("no_import_periods", "")
-        nip_periods = _parse_no_import_periods(nip_config)
-        if nip_periods and context.forecast_price:
-            # Use forecast_price timestamps to map steps to wall-clock time
-            for t in range(number_step):
-                idx = min(t, len(context.forecast_price) - 1)
-                entry = context.forecast_price[idx]
-                if isinstance(entry, dict) and "start" in entry:
-                    step_dt = entry["start"]
-                    # Convert to local time for comparison
-                    try:
-                        local_t = step_dt.astimezone().time()
-                    except Exception:
-                        local_t = step_dt.time() if hasattr(step_dt, "time") else None
-                    if local_t and _is_in_no_import_period(local_t, nip_periods):
-                        no_import_steps.add(t)
-            if no_import_steps:
-                _LOGGER.info(
-                    f"No-import periods active: {len(no_import_steps)} of {number_step} steps blocked"
-                )
-
         # --- Solve ---
         try:
             target_soc_frac, projected_cost, raw_dh, raw_dg, sequence = (
@@ -406,7 +333,6 @@ class LinearBatteryStateMachine(BatteryStateMachine):
                     acquisition_cost=terminal_valuation,
                     raw_acquisition_cost=context.acquisition_cost,
                     reserve_soc=float(context.config.get("reserve_soc", 0.0)),
-                    no_import_steps=no_import_steps if no_import_steps else None,
                 )
             )
         except Exception as e:

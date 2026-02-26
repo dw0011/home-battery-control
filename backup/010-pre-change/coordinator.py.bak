@@ -30,7 +30,6 @@ from .const import (
     CONF_LOAD_SENSITIVITY_HIGH_TEMP,
     CONF_LOAD_SENSITIVITY_LOW_TEMP,
     CONF_LOAD_TODAY_ENTITY,
-    CONF_NO_IMPORT_PERIODS,
     CONF_RESERVE_SOC,
     CONF_SCRIPT_CHARGE,
     CONF_SCRIPT_CHARGE_STOP,
@@ -425,7 +424,6 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     "battery_rate_max": self.config.get(CONF_BATTERY_CHARGE_RATE_MAX, 6.3),
                     "inverter_limit": self.config.get(CONF_INVERTER_LIMIT_MAX, 10.0),
                     "reserve_soc": self.config.get(CONF_RESERVE_SOC, 0.0),
-                    "no_import_periods": self.config.get(CONF_NO_IMPORT_PERIODS, ""),
                 },
                 acquisition_cost=0.06,  # Explicit fallback for Live HA integration
             )

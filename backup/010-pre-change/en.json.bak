@@ -27,6 +27,7 @@
                     "battery_capacity": "Battery Capacity (kWh)",
                     "battery_rate_max": "Max Charge/Discharge Rate (kW)",
                     "inverter_limit": "Inverter Limit (kW)",
+                    "reserve_soc": "Reserve SoC (%)",
                     "import_price_entity": "Import Price (Amber Electric)",
                     "export_price_entity": "Export Price / Feed-In (Amber Electric)",
                     "weather_entity": "Weather Entity",
@@ -45,7 +46,7 @@
                     "script_charge_stop": "Script: Stop Charging",
                     "script_discharge": "Script: Discharge to Grid",
                     "script_discharge_stop": "Script: Stop Discharging",
-                    "no_import_periods": "No-Import Periods (e.g. 15:00-21:00)"
+                    "panel_admin_only": "Panel Visible to Admins Only"
                 }
             }
         }
@@ -87,6 +88,7 @@
                     "battery_capacity": "Battery Capacity (kWh)",
                     "battery_rate_max": "Max Charge/Discharge Rate (kW)",
                     "inverter_limit": "Inverter Limit (kW)",
+                    "reserve_soc": "Reserve SoC (%)",
                     "import_price_entity": "Import Price (Amber Electric)",
                     "export_price_entity": "Export Price / Feed-In (Amber Electric)",
                     "weather_entity": "Weather Entity",
@@ -103,8 +105,7 @@
                     "script_charge_stop": "Script: Stop Charging",
                     "script_discharge": "Script: Discharge to Grid",
                     "script_discharge_stop": "Script: Stop Discharging",
-                    "panel_admin_only": "Panel visible to admins only",
-                    "no_import_periods": "No-Import Periods (e.g. 15:00-21:00)"
+                    "panel_admin_only": "Panel visible to admins only"
                 }
             }
         }
