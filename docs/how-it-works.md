@@ -163,7 +163,8 @@ Weather Interval {
 | `battery_power` | `battery_power_entity` | kW | Positive = discharging (or inverted) |
 | `solar_production` | `solar_entity` | kW | Current PV output |
 | `grid_power` | `grid_entity` | kW | Positive = importing (or inverted) |
-| `current_price` | `import_price_entity` | c/kWh | Current spot price |
+| `current_price` | `import_price_entity` | c/kWh | Current import (buy) spot price |
+| `current_export_price` | `export_price_entity` | c/kWh | Current export (sell) spot price |
 
 ### 6. Battery Configuration
 
