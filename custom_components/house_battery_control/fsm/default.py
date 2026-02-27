@@ -13,10 +13,7 @@ from typing import List, Optional
 
 from ..const import (
     STATE_CHARGE_GRID,
-    STATE_CHARGE_SOLAR,
-    STATE_DISCHARGE_HOME,
-    STATE_IDLE,
-    STATE_PRESERVE,
+    STATE_SELF_CONSUMPTION,
 )
 from .base import BatteryStateMachine, FSMContext, FSMResult
 
@@ -73,7 +70,7 @@ class DefaultBatteryStateMachine(BatteryStateMachine):
             # If solar is coming soon and SoC is moderate, skip grid charge
             if solar_coming and soc > 50.0:
                 return FSMResult(
-                    state=STATE_IDLE,
+                    state=STATE_SELF_CONSUMPTION,
                     limit_kw=0.0,
                     reason=f"Cheap price ({price:.1f}) but solar arriving soon, SoC {soc:.0f}% adequate",
                 )
@@ -89,7 +86,7 @@ class DefaultBatteryStateMachine(BatteryStateMachine):
         solar_excess = solar - load
         if solar_excess > SOLAR_MEANINGFUL_KW and soc < FULL_SOC:
             return FSMResult(
-                state=STATE_CHARGE_SOLAR,
+                state=STATE_SELF_CONSUMPTION,
                 limit_kw=solar_excess,
                 reason=f"Excess solar {solar_excess:.1f} kW, SoC {soc:.0f}%",
             )
@@ -100,7 +97,7 @@ class DefaultBatteryStateMachine(BatteryStateMachine):
         is_peak = self._is_peak_price(price, context.forecast_price)
         if is_peak and soc > RESERVE_SOC:
             return FSMResult(
-                state=STATE_DISCHARGE_HOME,
+                state=STATE_SELF_CONSUMPTION,
                 limit_kw=min(load, self._max_discharge_rate(context)),
                 reason=f"Peak price ({price:.1f} c/kWh), discharging to serve {load:.1f} kW load",
             )
@@ -110,7 +107,7 @@ class DefaultBatteryStateMachine(BatteryStateMachine):
         # -------------------------------------------------------
         if load > 2.0 and solar < SOLAR_MEANINGFUL_KW and soc > RESERVE_SOC and price > 15.0:
             return FSMResult(
-                state=STATE_DISCHARGE_HOME,
+                state=STATE_SELF_CONSUMPTION,
                 limit_kw=min(load, self._max_discharge_rate(context)),
                 reason=f"High load ({load:.1f} kW), no solar, price {price:.1f} — discharging",
             )
@@ -121,7 +118,7 @@ class DefaultBatteryStateMachine(BatteryStateMachine):
         peak_coming = self._peak_coming_soon(context.forecast_price)
         if peak_coming and soc > 50.0 and not is_cheap:
             return FSMResult(
-                state=STATE_PRESERVE,
+                state=STATE_SELF_CONSUMPTION,
                 limit_kw=0.0,
                 reason=f"Peak price approaching, preserving SoC {soc:.0f}%",
             )
@@ -130,7 +127,7 @@ class DefaultBatteryStateMachine(BatteryStateMachine):
         # 7. IDLE
         # -------------------------------------------------------
         return FSMResult(
-            state=STATE_IDLE,
+            state=STATE_SELF_CONSUMPTION,
             limit_kw=0.0,
             reason=f"Normal conditions — SoC {soc:.0f}%, price {price:.1f}, solar {solar:.1f} kW",
         )

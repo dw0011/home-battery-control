@@ -49,7 +49,7 @@ def test_concrete_implementation():
 
     class TestFSM(BatteryStateMachine):
         def calculate_next_state(self, context: FSMContext) -> FSMResult:
-            return FSMResult(state="IDLE", limit_kw=0.0, reason="Test")
+            return FSMResult(state="SELF_CONSUMPTION", limit_kw=0.0, reason="Test")
 
     fsm = TestFSM()
     ctx = FSMContext(
@@ -64,5 +64,5 @@ def test_concrete_implementation():
         config={"capacity_kwh": 27.0, "inverter_limit_kw": 10.0},
     )
     result = fsm.calculate_next_state(ctx)
-    assert result.state == "IDLE"
+    assert result.state == "SELF_CONSUMPTION"
     assert result.reason == "Test"

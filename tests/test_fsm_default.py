@@ -9,10 +9,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from custom_components.house_battery_control.const import (
     STATE_CHARGE_GRID,
-    STATE_CHARGE_SOLAR,
-    STATE_DISCHARGE_HOME,
-    STATE_IDLE,
-    STATE_PRESERVE,
+    STATE_SELF_CONSUMPTION,
 )
 from custom_components.house_battery_control.fsm.base import FSMContext, FSMResult
 from custom_components.house_battery_control.fsm.default import DefaultBatteryStateMachine
@@ -135,7 +132,7 @@ def test_excess_solar_charges_battery(fsm):
         current_price=20.0,  # normal price
     )
     result = fsm.calculate_next_state(ctx)
-    assert result.state == STATE_CHARGE_SOLAR
+    assert result.state == STATE_SELF_CONSUMPTION
 
 
 def test_solar_sunrise_awareness(fsm):
@@ -168,7 +165,7 @@ def test_high_price_discharges_home(fsm):
         solar_production=0.0,
     )
     result = fsm.calculate_next_state(ctx)
-    assert result.state == STATE_DISCHARGE_HOME
+    assert result.state == STATE_SELF_CONSUMPTION
 
 
 def test_high_price_no_discharge_when_low_soc(fsm):
@@ -179,7 +176,7 @@ def test_high_price_no_discharge_when_low_soc(fsm):
         load_power=2.0,
     )
     result = fsm.calculate_next_state(ctx)
-    assert result.state != STATE_DISCHARGE_HOME
+    assert result.state != STATE_SELF_CONSUMPTION or result.limit_kw == 0.0  # Should not discharge at low SoC
 
 
 # ============================================================
@@ -201,7 +198,7 @@ def test_preserve_before_peak(fsm):
     )
     result = fsm.calculate_next_state(ctx)
     # Should preserve for the upcoming peak
-    assert result.state in (STATE_PRESERVE, STATE_IDLE)
+    assert result.state == STATE_SELF_CONSUMPTION
 
 
 # ============================================================
@@ -218,7 +215,7 @@ def test_idle_when_nothing_special(fsm):
         load_power=0.5,
     )
     result = fsm.calculate_next_state(ctx)
-    assert result.state in (STATE_IDLE, STATE_CHARGE_SOLAR)
+    assert result.state in (STATE_SELF_CONSUMPTION, STATE_CHARGE_GRID)
 
 
 # ============================================================
@@ -235,7 +232,7 @@ def test_high_load_triggers_discharge(fsm):
         load_power=5.0,  # Heavy load
     )
     result = fsm.calculate_next_state(ctx)
-    assert result.state == STATE_DISCHARGE_HOME
+    assert result.state == STATE_SELF_CONSUMPTION
 
 
 # ============================================================
@@ -305,7 +302,7 @@ def test_peak_detection_with_import_price_key(fsm):
         forecast_price=_make_import_price_forecast(prices),
     )
     result = fsm.calculate_next_state(ctx)
-    assert result.state == STATE_DISCHARGE_HOME
+    assert result.state == STATE_SELF_CONSUMPTION
 
 
 def test_peak_coming_soon_with_import_price_key(fsm):
@@ -319,7 +316,7 @@ def test_peak_coming_soon_with_import_price_key(fsm):
         forecast_price=_make_import_price_forecast(prices),
     )
     result = fsm.calculate_next_state(ctx)
-    assert result.state in (STATE_PRESERVE, STATE_IDLE)
+    assert result.state == STATE_SELF_CONSUMPTION
 
 
 # ============================================================

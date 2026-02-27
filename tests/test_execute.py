@@ -1,6 +1,7 @@
 """Tests for the Execute module — translates FSM states into Powerwall commands.
 
-Written BEFORE implementation per TDD discipline.
+Updated for Feature 07: Executor State Cleanup.
+Tests the 4-state transition-aware command logic.
 """
 
 from unittest.mock import AsyncMock, MagicMock
@@ -13,11 +14,9 @@ from custom_components.house_battery_control.const import (
     CONF_SCRIPT_DISCHARGE,
     CONF_SCRIPT_DISCHARGE_STOP,
     STATE_CHARGE_GRID,
-    STATE_CHARGE_SOLAR,
     STATE_DISCHARGE_GRID,
-    STATE_DISCHARGE_HOME,
-    STATE_IDLE,
-    STATE_PRESERVE,
+    STATE_ERROR,
+    STATE_SELF_CONSUMPTION,
 )
 from custom_components.house_battery_control.execute import PowerwallExecutor
 
@@ -64,21 +63,6 @@ async def test_charge_grid_calls_charge_script(executor, mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_idle_after_charge_calls_charge_stop(executor, mock_hass):
-    """Returning to IDLE after charging should call the charge stop script."""
-    # First go to charge
-    await executor.apply_state(STATE_CHARGE_GRID, limit_kw=6.3)
-    mock_hass.services.async_call.reset_mock()
-
-    # Then go to IDLE
-    await executor.apply_state(STATE_IDLE, limit_kw=0.0)
-    assert executor.last_state == STATE_IDLE
-    mock_hass.services.async_call.assert_any_call(
-        "script", "turn_on", {"entity_id": "script.charge_stop"}
-    )
-
-
-@pytest.mark.asyncio
 async def test_discharge_grid_calls_discharge_script(executor, mock_hass):
     """DISCHARGE_GRID should call the discharge script."""
     await executor.apply_state(STATE_DISCHARGE_GRID, limit_kw=5.0)
@@ -88,64 +72,116 @@ async def test_discharge_grid_calls_discharge_script(executor, mock_hass):
     )
 
 
-@pytest.mark.asyncio
-async def test_idle_after_discharge_calls_discharge_stop(executor, mock_hass):
-    """Returning to IDLE after discharging should call the discharge stop script."""
-    # First go to discharge
-    await executor.apply_state(STATE_DISCHARGE_GRID, limit_kw=5.0)
-    mock_hass.services.async_call.reset_mock()
-
-    # Then go to IDLE
-    await executor.apply_state(STATE_IDLE, limit_kw=0.0)
-    assert executor.last_state == STATE_IDLE
-    mock_hass.services.async_call.assert_any_call(
-        "script", "turn_on", {"entity_id": "script.discharge_stop"}
-    )
+# --- Transition-aware stop tests ---
 
 
 @pytest.mark.asyncio
-async def test_discharge_home_state(executor, mock_hass):
-    """DISCHARGE_HOME (Self-Consumpiton) should return from a forced state via stop scripts."""
+async def test_self_consumption_after_charge_calls_only_charge_stop(executor, mock_hass):
+    """CHARGE_GRID → SELF_CONSUMPTION should call only charge_stop (not discharge_stop)."""
     await executor.apply_state(STATE_CHARGE_GRID, limit_kw=6.3)
     mock_hass.services.async_call.reset_mock()
 
-    await executor.apply_state(STATE_DISCHARGE_HOME, limit_kw=5.0)
-    assert executor.last_state == STATE_DISCHARGE_HOME
-    mock_hass.services.async_call.assert_any_call(
+    await executor.apply_state(STATE_SELF_CONSUMPTION, limit_kw=0.0)
+    assert executor.last_state == STATE_SELF_CONSUMPTION
+    mock_hass.services.async_call.assert_called_once_with(
         "script", "turn_on", {"entity_id": "script.charge_stop"}
     )
 
 
 @pytest.mark.asyncio
-async def test_preserve_state(executor):
-    """PRESERVE should be tracked."""
-    await executor.apply_state(STATE_PRESERVE, limit_kw=0.0)
-    assert executor.last_state == STATE_PRESERVE
+async def test_self_consumption_after_discharge_calls_only_discharge_stop(executor, mock_hass):
+    """DISCHARGE_GRID → SELF_CONSUMPTION should call only discharge_stop (not charge_stop)."""
+    await executor.apply_state(STATE_DISCHARGE_GRID, limit_kw=5.0)
+    mock_hass.services.async_call.reset_mock()
+
+    await executor.apply_state(STATE_SELF_CONSUMPTION, limit_kw=0.0)
+    assert executor.last_state == STATE_SELF_CONSUMPTION
+    mock_hass.services.async_call.assert_called_once_with(
+        "script", "turn_on", {"entity_id": "script.discharge_stop"}
+    )
 
 
 @pytest.mark.asyncio
-async def test_charge_solar_state(executor):
-    """CHARGE_SOLAR should be tracked."""
-    await executor.apply_state(STATE_CHARGE_SOLAR, limit_kw=3.0)
-    assert executor.last_state == STATE_CHARGE_SOLAR
+async def test_self_consumption_from_idle_no_calls(executor, mock_hass):
+    """SELF_CONSUMPTION when nothing was active → no script calls."""
+    await executor.apply_state(STATE_SELF_CONSUMPTION, limit_kw=0.0)
+    assert executor.last_state == STATE_SELF_CONSUMPTION
+    # No stop commands needed — nothing was active
+    mock_hass.services.async_call.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_no_repeat_if_same_state(executor):
+async def test_charge_to_discharge_stops_charge_first(executor, mock_hass):
+    """CHARGE_GRID → DISCHARGE_GRID should stop charge then start discharge."""
+    await executor.apply_state(STATE_CHARGE_GRID, limit_kw=6.3)
+    mock_hass.services.async_call.reset_mock()
+
+    await executor.apply_state(STATE_DISCHARGE_GRID, limit_kw=5.0)
+    calls = mock_hass.services.async_call.call_args_list
+    assert len(calls) == 2
+    # First call: stop charge
+    assert calls[0] == (("script", "turn_on", {"entity_id": "script.charge_stop"}),)
+    # Second call: start discharge
+    assert calls[1] == (("script", "turn_on", {"entity_id": "script.force_discharge"}),)
+
+
+@pytest.mark.asyncio
+async def test_discharge_to_charge_stops_discharge_first(executor, mock_hass):
+    """DISCHARGE_GRID → CHARGE_GRID should stop discharge then start charge."""
+    await executor.apply_state(STATE_DISCHARGE_GRID, limit_kw=5.0)
+    mock_hass.services.async_call.reset_mock()
+
+    await executor.apply_state(STATE_CHARGE_GRID, limit_kw=6.3)
+    calls = mock_hass.services.async_call.call_args_list
+    assert len(calls) == 2
+    # First call: stop discharge
+    assert calls[0] == (("script", "turn_on", {"entity_id": "script.discharge_stop"}),)
+    # Second call: start charge
+    assert calls[1] == (("script", "turn_on", {"entity_id": "script.force_charge"}),)
+
+
+# --- ERROR state tests ---
+
+
+@pytest.mark.asyncio
+async def test_error_after_charge_stops_charge(executor, mock_hass):
+    """ERROR after CHARGE_GRID should call charge_stop."""
+    await executor.apply_state(STATE_CHARGE_GRID, limit_kw=6.3)
+    mock_hass.services.async_call.reset_mock()
+
+    await executor.apply_state(STATE_ERROR, limit_kw=0.0)
+    mock_hass.services.async_call.assert_called_once_with(
+        "script", "turn_on", {"entity_id": "script.charge_stop"}
+    )
+
+
+@pytest.mark.asyncio
+async def test_error_after_discharge_stops_discharge(executor, mock_hass):
+    """ERROR after DISCHARGE_GRID should call discharge_stop."""
+    await executor.apply_state(STATE_DISCHARGE_GRID, limit_kw=5.0)
+    mock_hass.services.async_call.reset_mock()
+
+    await executor.apply_state(STATE_ERROR, limit_kw=0.0)
+    mock_hass.services.async_call.assert_called_once_with(
+        "script", "turn_on", {"entity_id": "script.discharge_stop"}
+    )
+
+
+# --- Dedup and observation mode ---
+
+
+@pytest.mark.asyncio
+async def test_no_repeat_if_same_state(executor, mock_hass):
     """Should not re-apply if state hasn't changed."""
-    await executor.apply_state(STATE_IDLE, limit_kw=0.0)
-    result1 = executor.last_state
-    await executor.apply_state(STATE_IDLE, limit_kw=0.0)
-    result2 = executor.last_state
-    assert result1 == result2 == STATE_IDLE
-    # Should have only applied once
+    await executor.apply_state(STATE_SELF_CONSUMPTION, limit_kw=0.0)
+    await executor.apply_state(STATE_SELF_CONSUMPTION, limit_kw=0.0)
     assert executor.apply_count == 1
 
 
 @pytest.mark.asyncio
 async def test_state_change_increments_count(executor):
     """Changing state should increment the apply count."""
-    await executor.apply_state(STATE_IDLE, limit_kw=0.0)
+    await executor.apply_state(STATE_SELF_CONSUMPTION, limit_kw=0.0)
     await executor.apply_state(STATE_CHARGE_GRID, limit_kw=6.3)
     assert executor.apply_count == 2
 
@@ -225,4 +261,3 @@ async def test_observation_mode_dedup_after_real_execution(mock_hass):
     await executor.apply_state(STATE_CHARGE_GRID, limit_kw=6.3)
     assert executor.apply_count == 1  # No increment
     mock_hass.services.async_call.assert_not_called()
-

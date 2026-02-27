@@ -59,7 +59,7 @@ class HBCStateSensor(HBCSensorBase):
         """Return the state of the sensor."""
         # This will come from the FSM result stored in the coordinator data
         # For now, it might be None if FSM isn't run yet
-        return self.coordinator.data.get("state", "IDLE")
+        return self.coordinator.data.get("state", "SELF_CONSUMPTION")
 
 
 class HBCReasonSensor(HBCSensorBase):

@@ -107,8 +107,8 @@ def test_dp_negative_export_trap(fsm, mock_context):
     with open("dp_debug.txt", "w") as f:
         f.write(str(fsm.controller.optimizer.policy))
 
-    # The absolute optimal move is to NOT charge the battery right now, leaving it at 90%
-    # so there is space for the toxic solar later.
+    # The DP engine's optimal move is to NOT charge the battery right now, leaving it at 90%
+    # so there is space for the toxic solar later. DP maps this to IDLE (no SELF_CONSUMPTION state).
     assert result.state == "IDLE"
 
 

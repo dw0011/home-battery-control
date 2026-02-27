@@ -30,10 +30,10 @@ def test_state_sensor_returns_state(mock_coordinator):
 
 
 def test_state_sensor_defaults_to_idle(mock_coordinator):
-    """State sensor should default to IDLE when no state in data."""
+    """State sensor should default to SELF_CONSUMPTION when no state in data."""
     mock_coordinator.data = {}
     sensor = HBCStateSensor(mock_coordinator)
-    assert sensor.native_value == "IDLE"
+    assert sensor.native_value == "SELF_CONSUMPTION"
 
 
 def test_reason_sensor_returns_reason(mock_coordinator):

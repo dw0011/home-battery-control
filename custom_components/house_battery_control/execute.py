@@ -2,6 +2,7 @@
 
 Responsible for:
 - Mapping FSM states to HA service calls
+- Transition-aware command dispatch (only stop what was started)
 - Deduplicating commands (don't re-send if state unchanged)
 - Providing a human-readable summary of the last command
 """
@@ -18,23 +19,19 @@ from .const import (
     CONF_SCRIPT_DISCHARGE,
     CONF_SCRIPT_DISCHARGE_STOP,
     STATE_CHARGE_GRID,
-    STATE_CHARGE_SOLAR,
     STATE_DISCHARGE_GRID,
-    STATE_DISCHARGE_HOME,
-    STATE_IDLE,
-    STATE_PRESERVE,
+    STATE_ERROR,
+    STATE_SELF_CONSUMPTION,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 # Command descriptions per state
 _STATE_DESCRIPTIONS = {
-    STATE_IDLE: "Self-Consumption mode, no grid charging",
-    STATE_CHARGE_GRID: "Backup mode, grid charging enabled",
-    STATE_CHARGE_SOLAR: "Self-Consumption mode, solar only",
-    STATE_DISCHARGE_HOME: "Self-Consumption mode, reserve 0%",
-    STATE_DISCHARGE_GRID: "Time-Based mode, export enabled",
-    STATE_PRESERVE: "Backup mode, reserve 100%",
+    STATE_CHARGE_GRID: "Grid charging enabled",
+    STATE_DISCHARGE_GRID: "Grid export enabled",
+    STATE_SELF_CONSUMPTION: "Self-Consumption mode, inverter manages autonomously",
+    STATE_ERROR: "Error state, all actions stopped",
 }
 
 
@@ -101,7 +98,8 @@ class PowerwallExecutor:
     async def _async_execute_commands(self, state: str, limit_kw: float) -> None:
         """Determine and invoke which HA services to call for a given state.
 
-        Executes the 4 configured scripts (Spec 3.6).
+        Transition-aware: only stops the previously active command.
+        Uses _last_executed_state to know what was running.
         """
         charge_script = self._config.get(CONF_SCRIPT_CHARGE)
         charge_stop_script = self._config.get(CONF_SCRIPT_CHARGE_STOP)
@@ -115,21 +113,37 @@ class PowerwallExecutor:
             _LOGGER.info(f"CMD: {intent} ({entity_id})")
             await self._hass.services.async_call("script", "turn_on", {"entity_id": entity_id})
 
+        prev = self._last_executed_state
+
         if state == STATE_CHARGE_GRID:
+            # Stop discharge if it was running, then start charge
+            if prev == STATE_DISCHARGE_GRID:
+                await _call(discharge_stop_script, "Stop discharge (transition to charge)")
             await _call(charge_script, "Enable grid charging")
-        elif state == STATE_DISCHARGE_HOME:
-            await _call(charge_stop_script, "Self-Consumption (stop charge/discharge overrides)")
-        elif state == STATE_PRESERVE:
-            # Not fully addressed by 4-script logic yet, but logically it implies stopping discharge
-            await _call(discharge_stop_script, "Preserve SoC (stop discharge)")
-        elif state == STATE_CHARGE_SOLAR:
-            await _call(charge_stop_script, "Solar charge only (stop forced charge)")
+
         elif state == STATE_DISCHARGE_GRID:
-            await _call(discharge_script, "Enable export")
+            # Stop charge if it was running, then start discharge
+            if prev == STATE_CHARGE_GRID:
+                await _call(charge_stop_script, "Stop charge (transition to discharge)")
+            await _call(discharge_script, "Enable grid export")
+
+        elif state == STATE_SELF_CONSUMPTION:
+            # Stop only what was previously active
+            if prev == STATE_CHARGE_GRID:
+                await _call(charge_stop_script, "Stop charge (entering self-consumption)")
+            elif prev == STATE_DISCHARGE_GRID:
+                await _call(discharge_stop_script, "Stop discharge (entering self-consumption)")
+            # If prev was already SELF_CONSUMPTION or None, no calls needed
+
+        elif state == STATE_ERROR:
+            # Safety: stop whatever is active
+            if prev == STATE_CHARGE_GRID:
+                await _call(charge_stop_script, "Stop charge (error state)")
+            elif prev == STATE_DISCHARGE_GRID:
+                await _call(discharge_stop_script, "Stop discharge (error state)")
+
         else:
-            # IDLE — neutral, ensure we are not forcing charge or discharge
-            await _call(charge_stop_script, "Idle (stop forced charge)")
-            await _call(discharge_stop_script, "Idle (stop forced discharge)")
+            _LOGGER.warning(f"Unknown state '{state}', no commands issued")
 
     def get_command_summary(self) -> str:
         """Return a human-readable summary of the last command."""
