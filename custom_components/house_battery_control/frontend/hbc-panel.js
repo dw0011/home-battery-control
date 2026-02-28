@@ -45,11 +45,13 @@ class HBCPanel extends LitElement {
 
   async _fetchData() {
     try {
-      const token = this.hass && this.hass.auth && this.hass.auth.data
-        ? this.hass.auth.data.access_token
-        : null;
-      const headers = token ? { "Authorization": `Bearer ${token}` } : {};
-      const resp = await fetch("/hbc/api/status", { headers });
+      if (!this.hass) {
+        this._error = "Home Assistant connection not available";
+        this._loading = false;
+        return;
+      }
+      // Use HA's fetchWithAuth which auto-refreshes expired tokens (fixes #7)
+      const resp = await this.hass.fetchWithAuth("/hbc/api/status");
       if (resp.status === 401) {
         this._error = "Insufficient permissions — admin access required";
         this._loading = false;
@@ -59,7 +61,7 @@ class HBCPanel extends LitElement {
       this._data = await resp.json();
       this._error = "";
     } catch (e) {
-      this._error = e.message;
+      this._error = e.message || String(e);
     }
     this._loading = false;
   }
