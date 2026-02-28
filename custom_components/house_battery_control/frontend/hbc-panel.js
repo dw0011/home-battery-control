@@ -229,6 +229,10 @@ class HBCPanel extends LitElement {
             <div class="stat-value">${summaryStats.totalLoad}</div>
             <div class="stat-label">Total Load kWh</div>
           </div>
+          <div class="stat">
+            <div class="stat-value">${(d.acquisition_cost || 0).toFixed(2)}</div>
+            <div class="stat-label">Acq Cost c/kWh</div>
+          </div>
         </div>
       </div>
       <div class="meta" style="text-align: center; padding: 8px 0; opacity: 0.6; font-size: 0.85em;">
