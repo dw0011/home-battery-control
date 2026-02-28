@@ -15,5 +15,5 @@
         "scipy>=1.14.0",
         "numpy>=2.1.0"
     ],
-    "version": "1.2.0"
+    "version": "1.2.1-beta.1"
 }
