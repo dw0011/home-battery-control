@@ -17,14 +17,14 @@ Common issues and their solutions.
 
 ---
 
-## FSM Is Stuck in IDLE
+## FSM Is Stuck in SELF_CONSUMPTION
 
-**Symptoms**: `sensor.hbc_state` shows "IDLE" permanently, no battery commands are sent.
+**Symptoms**: `sensor.hbc_state` shows "SELF_CONSUMPTION" permanently, no battery commands are sent.
 
 **Causes**:
 1. **No tariff data** — The Amber Electric integration isn't providing forecast data. Check that your import/export price sensors have a `forecast` attribute with future prices.
 2. **No solar forecast** — Solcast sensors are empty. Check that `sensor.solcast_pv_forecast_today` has a `forecast` attribute.
-3. **Solver finds inaction optimal** — If prices are flat and solar is zero, IDLE may genuinely be the optimal choice.
+3. **Solver finds inaction optimal** — If prices are flat and solar is zero, SELF_CONSUMPTION may genuinely be the optimal choice.
 4. **No control scripts configured** — HBC is in observation/debug mode. Configure scripts in Step 3 to enable control.
 
 **Fix**: Navigate to `/hbc/api/status` (admin auth required) and check the `sensor_diagnostics` section for any sensors showing `available: false`.

@@ -199,6 +199,7 @@ class FSMContext:
     forecast_price: list    # 288 × RateInterval
     config: dict            # Battery specs + all config keys
     acquisition_cost: float # Weighted average cost of stored energy (c/kWh)
+    current_export_price: float  # Current export (sell) price (c/kWh)
 ```
 
 ---
@@ -313,12 +314,10 @@ class FSMResult:
 
 | State | What It Means | Physical Powerwall Action |
 |---|---|---|
-| `IDLE` | Solver determined inaction is optimal | Self-Consumption, no forced charge/discharge |
+| `SELF_CONSUMPTION` | Default state: battery supports home load autonomously | Self-Consumption, inverter auto-manages |
 | `CHARGE_GRID` | Cheaper to buy now than buy later | Force charge from grid (Backup mode) |
-| `CHARGE_SOLAR` | Absorb available solar production | Self-Consumption, solar only |
-| `DISCHARGE_HOME` | Power the house from battery | Self-Consumption, reserve at 0% |
 | `DISCHARGE_GRID` | Export to grid for profit | Time-Based Control, export enabled |
-| `PRESERVE` | Protect SoC for upcoming high-price period | Backup mode, reserve at 100% |
+| `ERROR` | Solver failed or returned invalid result | All actions stopped |
 
 ### Future Plan Array
 
@@ -348,11 +347,9 @@ The `PowerwallExecutor` (`execute.py`) translates the FSM state into physical Po
 | FSM State | Script Called | Powerwall Mode |
 |---|---|---|
 | `CHARGE_GRID` | `script_charge` | Backup mode, grid charging enabled |
-| `CHARGE_SOLAR` | `script_charge_stop` | Self-Consumption, solar only |
-| `DISCHARGE_HOME` | `script_charge_stop` | Self-Consumption, reserve 0% |
 | `DISCHARGE_GRID` | `script_discharge` | Time-Based Control, export enabled |
-| `PRESERVE` | `script_discharge_stop` | Backup mode, reserve 100% |
-| `IDLE` | `script_charge_stop` + `script_discharge_stop` | Neutral state, stop all overrides |
+| `SELF_CONSUMPTION` | `script_charge_stop` or `script_discharge_stop` (transition-aware) | Self-Consumption, inverter manages autonomously |
+| `ERROR` | Stop active script (transition-aware) | Safety stop |
 
 ### Deduplication
 

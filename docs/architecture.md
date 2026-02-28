@@ -13,7 +13,7 @@ A contributor guide to House Battery Control's codebase.
 | `const.py` | All `CONF_*` constants, `DEFAULT_*` values, FSM state names |
 | `coordinator.py` | `DataUpdateCoordinator`: orchestrates 5-min update cycle, assembles `FSMContext`, builds diagnostic plan table |
 | `execute.py` | `PowerwallExecutor`: FSM state → HA script calls with deduplication |
-| `sensor.py` | Exposes `sensor.hbc_state` and `sensor.hbc_projected_cost` to HA |
+| `sensor.py` | Exposes `sensor.hbc_state`, `sensor.hbc_reason`, `sensor.hbc_limit_kw`, `sensor.hbc_dp_target_soc` to HA |
 | `web.py` | HTTP views: dashboard panel, `/hbc/api/status`, `/hbc/api/ping`, `/hbc/api/config-yaml`, `/hbc/api/load-history` |
 | `rates.py` | `RatesManager`: fetches + merges Amber Electric import/export tariffs |
 | `load.py` | `LoadPredictor`: builds 24h load forecast from 5-day recorder history + temperature adjustment |
@@ -21,8 +21,9 @@ A contributor guide to House Battery Control's codebase.
 | `historical_analyzer.py` | Statistical profiling of load history into 5-minute averages |
 | `fsm/base.py` | ABC: `FSMContext`, `FSMResult`, `BatteryStateMachine` interface |
 | `fsm/lin_fsm.py` | `LinearBatteryStateMachine`: LP solver (SciPy HiGHS) — the core optimiser |
-| `fsm/dp_fsm.py` | `DPBatteryStateMachine`: Dynamic Programming solver (alternative, CPU-intensive) |
+| `fsm/dp_fsm.py` | `DpBatteryStateMachine`: Dynamic Programming solver (alternative, CPU-intensive) |
 | `fsm/default.py` | Simple rule-based FSM fallback |
+| `fsm/lin_fsm_ortools_archive.py` | Archived OR-Tools LP solver (replaced by SciPy) |
 | `solar/base.py` | ABC for solar forecast providers |
 | `solar/solcast.py` | `SolcastSolar`: Solcast HA integration adapter |
 | `frontend/hbc-panel.js` | LitElement web component for the sidebar panel dashboard |
@@ -68,7 +69,8 @@ FSMContext(
     solar_production=2.5,        # Current PV (kW)
     load_power=1.2,              # Current load (kW)
     grid_voltage=240.0,          # Grid voltage (V)
-    current_price=28.5,          # Current price (c/kWh)
+    current_price=28.5,          # Current import price (c/kWh)
+    current_export_price=8.0,    # Current export price (c/kWh)
     forecast_solar=[...],        # 288 × {start, kw}
     forecast_load=[...],         # 288 × {start, kw}
     forecast_price=[...],        # 288 × RateInterval
@@ -100,22 +102,27 @@ FSMResult(
 |---|---|
 | `test_init.py` | Integration loading, constants, web view imports |
 | `test_config_flow.py` | Config keys, flow steps, options schema |
-| `test_coordinator.py` | Update cycle, sensor reading, error recovery |
+| `test_coordinator.py` | Update cycle, sensor reading, error recovery, cost persistence |
 | `test_fsm_base.py` | FSMContext/FSMResult contracts |
-| `test_fsm.py` | LP solver state transitions |
+| `test_fsm_default.py` | Rule-based FSM state transitions |
+| `test_fsm_lin.py` | LP solver execution, target SoC, no-import periods |
 | `test_dp.py` | DP solver (alternative engine) |
 | `test_execute.py` | Executor deduplication and script mapping |
-| `test_load.py` | Load prediction from history |
+| `test_load.py` | Load prediction from history, interpolation, midnight resets |
+| `test_lazy_import.py` | Lazy loading of heavy dependencies |
+| `test_manifest.py` | manifest.json SciPy dependency |
+| `test_rates.py` | Rate parsing, merging, 5-min chunking |
+| `test_sensor.py` | Sensor entity state defaults |
+| `test_solcast.py` | Solcast entity reading + combining |
+| `test_startup.py` | HA startup event coordinator refresh |
 | `test_weather.py` | Weather forecast extraction |
 | `test_web.py` | API responses, plan table, power flow SVG |
-| `test_sensor.py` | Sensor entity registration |
-| `test_rates.py` | Rate parsing + merging |
 
 ### Running Tests
 
 ```bash
 pip install -r requirements_test.txt
-python -m pytest tests/ -v          # Full suite (133 tests)
+python -m pytest tests/ -v          # Full suite (150 tests)
 python -m pytest tests/ -v -k fsm   # FSM tests only
 ruff check custom_components/ tests/ # Linting
 ```
