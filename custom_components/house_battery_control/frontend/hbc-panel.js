@@ -51,11 +51,21 @@ class HBCPanel extends LitElement {
         return;
       }
       // Use HA's fetchWithAuth which auto-refreshes expired tokens (fixes #7)
-      const resp = await this.hass.fetchWithAuth("/hbc/api/status");
+      let resp = await this.hass.fetchWithAuth("/hbc/api/status");
       if (resp.status === 401) {
-        this._error = "Insufficient permissions — admin access required";
-        this._loading = false;
-        return;
+        // Tab may have been idle — HA reconnects WebSocket on focus.
+        // Rapid retry: 500ms apart, up to 5 attempts (fixes #11)
+        for (let i = 0; i < 5; i++) {
+          await new Promise(r => setTimeout(r, 500));
+          if (!this.hass) break;
+          resp = await this.hass.fetchWithAuth("/hbc/api/status");
+          if (resp.status !== 401) break;
+        }
+        if (resp.status === 401) {
+          this._error = "Insufficient permissions — admin access required";
+          this._loading = false;
+          return;
+        }
       }
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       this._data = await resp.json();
