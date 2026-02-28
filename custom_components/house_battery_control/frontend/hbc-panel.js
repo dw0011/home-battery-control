@@ -29,18 +29,46 @@ class HBCPanel extends LitElement {
     this._data = {};
     this._error = "";
     this._loading = true;
-    this._interval = null;
+    this._fallbackInterval = null;
+    this._lastFetch = 0;
   }
 
   connectedCallback() {
     super.connectedCallback();
     this._fetchData();
-    this._interval = setInterval(() => this._fetchData(), 30000);
+    // 60s fallback timer for edge cases where entity state doesn't change (FR-004)
+    this._fallbackInterval = setInterval(() => this._fetchData(), 60000);
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    if (this._interval) clearInterval(this._interval);
+    if (this._fallbackInterval) clearInterval(this._fallbackInterval);
+  }
+
+  // Push-driven: react to HA hass changes instead of polling (FR-001, fixes #12)
+  updated(changedProps) {
+    super.updated(changedProps);
+    if (!changedProps.has("hass")) return;
+    const oldHass = changedProps.get("hass");
+    if (!oldHass) {
+      // First hass assignment — fetch immediately
+      this._fetchData();
+      return;
+    }
+    const oldState = oldHass.states["sensor.hbc_state"];
+    const newState = this.hass.states["sensor.hbc_state"];
+    if (!oldState || !newState) return;
+    if (oldState.state !== newState.state || oldState.last_updated !== newState.last_updated) {
+      this._debouncedFetch();
+    }
+  }
+
+  // 10s debounce to avoid redundant fetches (FR-003)
+  _debouncedFetch() {
+    const now = Date.now();
+    if (this._lastFetch && (now - this._lastFetch) < 10000) return;
+    this._lastFetch = now;
+    this._fetchData();
   }
 
   async _fetchData() {
