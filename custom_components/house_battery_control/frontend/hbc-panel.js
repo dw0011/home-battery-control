@@ -4,6 +4,19 @@ import {
   css,
 } from "https://unpkg.com/lit-element@2.4.0/lit-element.js?module";
 
+// Module-level recovery: after extended idle, HA may destroy the panel element
+// without recreating it. Detect tab focus and reload if panel is missing.
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  if (!location.pathname.startsWith("/hbc-panel")) return;
+  // Brief delay to let HA finish its own reconnection
+  setTimeout(() => {
+    if (!document.querySelector("hbc-panel")) {
+      location.reload();
+    }
+  }, 2000);
+});
+
 class HBCPanel extends LitElement {
   static get properties() {
     return {
