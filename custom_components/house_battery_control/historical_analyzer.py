@@ -33,6 +33,42 @@ def extract_valid_data(historic_states_parsed: list) -> list:
     return valid_data
 
 
+def extract_temp_data(historic_states_parsed: list) -> list:
+    """Parse weather entity history into time-sorted temperature values.
+
+    Weather entities store temperature in attributes.temperature (their state
+    is a condition like 'sunny'). Falls back to state for numeric sensor entities.
+    """
+    valid_data = []
+    for entry in historic_states_parsed:
+        try:
+            time_str = entry.get("last_changed")
+            if isinstance(time_str, datetime):
+                dt = time_str
+            else:
+                dt = parse_isoformat(time_str)
+
+            # Try attributes.temperature first (weather entities)
+            attrs = entry.get("attributes", {})
+            temp = attrs.get("temperature")
+            if temp is not None:
+                val = float(temp)
+            else:
+                # Fallback: try state directly (numeric sensor entities)
+                state = entry.get("state")
+                if state in ("unavailable", "unknown", None, ""):
+                    continue
+                val = float(state)
+
+            valid_data.append({"time": dt.timestamp(), "value": val})
+        except (ValueError, TypeError, KeyError):
+            continue
+
+    if valid_data:
+        valid_data.sort(key=lambda x: x["time"])
+    return valid_data
+
+
 def interpolate(target_t: float, valid_data: list) -> float:
     """Linear interpolation natively adapted from standalone script."""
     if not valid_data:
@@ -59,14 +95,18 @@ def interpolate(target_t: float, valid_data: list) -> float:
 
 
 def build_historical_profile(
-    valid_data: list, target_tz=None, is_energy_sensor: bool = True
+    valid_data: list, target_tz=None, is_energy_sensor: bool = True,
+    temp_data: list | None = None,
 ) -> dict:
     """
     Chronologically iterate over all valid history data, compute 5-minute intervals,
     handle midnight reset gaps, and average the results into a 24-hour HH:MM dictionary
     matching the exact mathematical logic of `extract_kwh_usage.py`.
+
+    When temp_data is provided, also averages temperature per slot.
+    Returns {"load_kw": float, "avg_temp": float|None} per slot.
     """
-    historical_profile: dict[str, float] = {}
+    historical_profile: dict[str, dict] = {}
     if not valid_data or len(valid_data) < 2:
         return historical_profile
 
@@ -82,6 +122,8 @@ def build_historical_profile(
 
         slot_sums = {}
         slot_counts = {}
+        temp_sums = {}
+        temp_counts = {}
 
         current_t = aligned_start
         prev_value = interpolate(current_t, valid_data)
@@ -118,12 +160,24 @@ def build_historical_profile(
             slot_sums[time_slot] += usage
             slot_counts[time_slot] += 1
 
+            # Accumulate temperature data if available
+            if temp_data:
+                temp_val = interpolate(current_t, temp_data)
+                if time_slot not in temp_sums:
+                    temp_sums[time_slot] = 0.0
+                    temp_counts[time_slot] = 0
+                temp_sums[time_slot] += temp_val
+                temp_counts[time_slot] += 1
+
             current_t = next_t
             prev_value = next_value
 
         for slot, total in slot_sums.items():
-            # Calculate the literal average
-            historical_profile[slot] = total / slot_counts[slot]
+            avg_load = total / slot_counts[slot]
+            avg_temp = None
+            if slot in temp_sums and temp_counts[slot] > 0:
+                avg_temp = temp_sums[slot] / temp_counts[slot]
+            historical_profile[slot] = {"load_kw": avg_load, "avg_temp": avg_temp}
 
     except Exception as e:
         _LOGGER.error(f"Error building historical load profile: {e}")

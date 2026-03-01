@@ -25,6 +25,7 @@ class LoadPredictor:
         low_threshold: float = 15.0,
         duration_hours: int = 24,
         load_entity_id: str | None = None,
+        weather_entity_id: str | None = None,
     ) -> List[dict]:
         """
         Predict load for the next N hours in 5-minute intervals.
@@ -95,14 +96,53 @@ class LoadPredictor:
         historic_states_parsed = self.last_history_raw[0] if self.last_history_raw else []
 
         # Build statistical 24hr forecast if data exists using the native user module
-        from .historical_analyzer import build_historical_profile, extract_valid_data
+        from .historical_analyzer import (
+            build_historical_profile,
+            extract_temp_data,
+            extract_valid_data,
+        )
 
         valid_data = extract_valid_data(historic_states_parsed)
 
-        # Build Profile
-        # User requested exact alignment natively with extract script
+        # Fetch temperature history from weather entity (T003)
+        temp_data = None
+        if weather_entity_id and not getattr(self, "testing_bypass_history", False):
+            try:
+                from homeassistant.components.recorder import history as rec_history
+
+                end_date = start_time
+                start_date = end_date - timedelta(days=5)
+
+                temp_states_dict = await self._hass.async_add_executor_job(
+                    rec_history.get_significant_states,
+                    self._hass,
+                    start_date,
+                    end_date,
+                    [weather_entity_id],
+                )
+                temp_states_raw = temp_states_dict.get(weather_entity_id, [])
+
+                formatted_temp_states = []
+                for s in temp_states_raw:
+                    formatted_temp_states.append(
+                        {
+                            "state": s.state,  # type: ignore
+                            "last_changed": s.last_changed.replace(microsecond=0).isoformat(),  # type: ignore
+                            "attributes": dict(s.attributes),  # type: ignore
+                        }
+                    )
+
+                if formatted_temp_states:
+                    temp_data = extract_temp_data(formatted_temp_states)
+
+            except Exception as e:
+                _LOGGER.warning(f"Could not fetch temperature history: {e}")
+
+        # Build Profile with optional temperature data
         target_tz = start_time.tzinfo if start_time.tzinfo else None
-        historical_profile = build_historical_profile(valid_data, target_tz, is_energy_sensor)
+        historical_profile = build_historical_profile(
+            valid_data, target_tz, is_energy_sensor, temp_data=temp_data
+        )
 
         # Naive lookup for temperature at a given time
         def get_temp_at(target_time: datetime) -> float:
@@ -130,10 +170,11 @@ class LoadPredictor:
             derived_kw = None
 
             if time_slot in historical_profile:
+                slot_data = historical_profile[time_slot]
                 if is_energy_sensor:
-                    derived_kw = historical_profile[time_slot] * 12.0
+                    derived_kw = slot_data["load_kw"] * 12.0
                 else:
-                    derived_kw = historical_profile[time_slot]
+                    derived_kw = slot_data["load_kw"]
 
             if derived_kw is None:
                 # Fallback Dummy Profile
@@ -144,12 +185,28 @@ class LoadPredictor:
                 elif 7 <= hour <= 9:  # Morning Peak
                     derived_kw = 1.5
 
-            # Temperature Adjustment (Preserved per request)
+            # Temperature adjustment — delta-based when history available (FR-003/004/005)
             temp = get_temp_at(current)
-            if temp > high_threshold:
-                derived_kw += (temp - high_threshold) * high_sensitivity
-            elif temp < low_threshold:
-                derived_kw += (low_threshold - temp) * low_sensitivity
+            slot_hist_temp = None
+            if time_slot in historical_profile:
+                slot_hist_temp = historical_profile[time_slot].get("avg_temp")
+
+            if slot_hist_temp is not None:
+                # Delta-based: compare forecast to historical avg for this slot
+                # FR-004: forecast > high_threshold → adjust by delta × sensitivity
+                # FR-005: forecast < low_threshold → adjust by -delta × sensitivity
+                # FR-009: negative adjustments allowed (floor at 0.0 kW applied later)
+                temp_delta = temp - slot_hist_temp
+                if temp > high_threshold:
+                    derived_kw += temp_delta * high_sensitivity
+                elif temp < low_threshold:
+                    derived_kw += (-temp_delta) * low_sensitivity
+            else:
+                # Fallback: original absolute threshold (FR-008)
+                if temp > high_threshold:
+                    derived_kw += (temp - high_threshold) * high_sensitivity
+                elif temp < low_threshold:
+                    derived_kw += (low_threshold - temp) * low_sensitivity
 
             # Round off to 2 decimals (preserve 0.0 floor)
             kw_final = round(max(0.0, derived_kw), 2)

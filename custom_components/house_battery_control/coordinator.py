@@ -396,6 +396,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 load_entity_id=self.config.get(
                     CONF_LOAD_TODAY_ENTITY, ""
                 ),  # Ideally an instant load sensor, using what's available
+                weather_entity_id=self.config.get(CONF_WEATHER_ENTITY, ""),
             )
 
             # Align Solar Forecast to Rates Timeline

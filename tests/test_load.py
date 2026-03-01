@@ -531,3 +531,295 @@ async def test_unclamped_high_load(mock_hass):
     # In currently clamped logic, this will fail as prediction[0]["kw"] == 4.0
     # We want it to be 7.5 organically without needing the argument injected
     assert prediction[0]["kw"] == pytest.approx(7.5, abs=0.1)
+
+
+# --- Temperature Delta Adjustment Tests (Feature 017) ---
+
+
+@pytest.mark.asyncio
+async def test_load_delta_hot_day_positive(mock_hass):
+    """FR-004: History 20°C, forecast 35°C → load increased by delta × sensitivity."""
+    from unittest.mock import patch
+
+    predictor = LoadPredictor(mock_hass)
+    predictor.testing_bypass_history = True
+    start = datetime(2025, 2, 20, 12, 0, 0)
+
+    # Mock profile with temperature data: historical avg 20°C, base load 0.1 kWh
+    mock_profile = {"12:00": {"load_kw": 0.1, "avg_temp": 20.0}}
+
+    temp_forecast = [{"datetime": start, "temperature": 35.0, "condition": "sunny"}]
+
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kWh"})
+
+    with patch(
+        "custom_components.house_battery_control.historical_analyzer.build_historical_profile",
+        return_value=mock_profile,
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_valid_data",
+        return_value=[],
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_temp_data",
+        return_value=[],
+    ):
+        prediction = await predictor.async_predict(
+            start,
+            temp_forecast=temp_forecast,
+            high_sensitivity=0.2,
+            high_threshold=25.0,
+            duration_hours=1,
+            load_entity_id="sensor.load",
+        )
+
+    # load_kw * 12 = 0.1 * 12 = 1.2 kW base
+    # delta = 35 - 20 = 15, forecast 35 > threshold 25
+    # adjustment = 15 × 0.2 = 3.0
+    # total = 1.2 + 3.0 = 4.2
+    assert prediction[0]["kw"] == pytest.approx(4.2, abs=0.1)
+
+
+@pytest.mark.asyncio
+async def test_load_delta_zero_no_adjustment(mock_hass):
+    """FR-004: History 30°C, forecast 30°C → delta = 0, no adjustment."""
+    from unittest.mock import patch
+
+    predictor = LoadPredictor(mock_hass)
+    predictor.testing_bypass_history = True
+    start = datetime(2025, 2, 20, 12, 0, 0)
+
+    mock_profile = {"12:00": {"load_kw": 0.1, "avg_temp": 30.0}}
+
+    temp_forecast = [{"datetime": start, "temperature": 30.0, "condition": "sunny"}]
+
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kWh"})
+
+    with patch(
+        "custom_components.house_battery_control.historical_analyzer.build_historical_profile",
+        return_value=mock_profile,
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_valid_data",
+        return_value=[],
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_temp_data",
+        return_value=[],
+    ):
+        prediction = await predictor.async_predict(
+            start,
+            temp_forecast=temp_forecast,
+            high_sensitivity=0.2,
+            high_threshold=25.0,
+            duration_hours=1,
+            load_entity_id="sensor.load",
+        )
+
+    # load_kw * 12 = 1.2 kW base
+    # delta = 30 - 30 = 0, adjustment = 0
+    # total = 1.2
+    assert prediction[0]["kw"] == pytest.approx(1.2, abs=0.1)
+
+
+@pytest.mark.asyncio
+async def test_load_delta_negative_reduces_load(mock_hass):
+    """FR-009: History 35°C, forecast 28°C → negative delta, load reduced."""
+    from unittest.mock import patch
+
+    predictor = LoadPredictor(mock_hass)
+    predictor.testing_bypass_history = True
+    start = datetime(2025, 2, 20, 12, 0, 0)
+
+    mock_profile = {"12:00": {"load_kw": 0.3, "avg_temp": 35.0}}
+
+    temp_forecast = [{"datetime": start, "temperature": 28.0, "condition": "sunny"}]
+
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kWh"})
+
+    with patch(
+        "custom_components.house_battery_control.historical_analyzer.build_historical_profile",
+        return_value=mock_profile,
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_valid_data",
+        return_value=[],
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_temp_data",
+        return_value=[],
+    ):
+        prediction = await predictor.async_predict(
+            start,
+            temp_forecast=temp_forecast,
+            high_sensitivity=0.2,
+            high_threshold=25.0,
+            duration_hours=1,
+            load_entity_id="sensor.load",
+        )
+
+    # load_kw * 12 = 0.3 * 12 = 3.6 kW base
+    # delta = 28 - 35 = -7, forecast 28 > threshold 25
+    # adjustment = -7 × 0.2 = -1.4
+    # total = 3.6 - 1.4 = 2.2
+    assert prediction[0]["kw"] == pytest.approx(2.2, abs=0.1)
+
+
+@pytest.mark.asyncio
+async def test_load_delta_within_band_no_adjustment(mock_hass):
+    """FR-006: Forecast 22°C (within 15-25 band) → no adjustment regardless of delta."""
+    from unittest.mock import patch
+
+    predictor = LoadPredictor(mock_hass)
+    predictor.testing_bypass_history = True
+    start = datetime(2025, 2, 20, 12, 0, 0)
+
+    mock_profile = {"12:00": {"load_kw": 0.1, "avg_temp": 20.0}}
+
+    temp_forecast = [{"datetime": start, "temperature": 22.0, "condition": "cloudy"}]
+
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kWh"})
+
+    with patch(
+        "custom_components.house_battery_control.historical_analyzer.build_historical_profile",
+        return_value=mock_profile,
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_valid_data",
+        return_value=[],
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_temp_data",
+        return_value=[],
+    ):
+        prediction = await predictor.async_predict(
+            start,
+            temp_forecast=temp_forecast,
+            high_sensitivity=0.2,
+            low_sensitivity=0.3,
+            high_threshold=25.0,
+            low_threshold=15.0,
+            duration_hours=1,
+            load_entity_id="sensor.load",
+        )
+
+    # load_kw * 12 = 1.2 kW base
+    # 22°C is within 15-25 band: NO adjustment
+    assert prediction[0]["kw"] == pytest.approx(1.2, abs=0.1)
+
+
+@pytest.mark.asyncio
+async def test_load_delta_cold_snap(mock_hass):
+    """FR-005: History 18°C, forecast 8°C → load increased for heating."""
+    from unittest.mock import patch
+
+    predictor = LoadPredictor(mock_hass)
+    predictor.testing_bypass_history = True
+    start = datetime(2025, 2, 20, 12, 0, 0)
+
+    mock_profile = {"12:00": {"load_kw": 0.1, "avg_temp": 18.0}}
+
+    temp_forecast = [{"datetime": start, "temperature": 8.0, "condition": "cloudy"}]
+
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kWh"})
+
+    with patch(
+        "custom_components.house_battery_control.historical_analyzer.build_historical_profile",
+        return_value=mock_profile,
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_valid_data",
+        return_value=[],
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_temp_data",
+        return_value=[],
+    ):
+        prediction = await predictor.async_predict(
+            start,
+            temp_forecast=temp_forecast,
+            low_sensitivity=0.3,
+            low_threshold=15.0,
+            duration_hours=1,
+            load_entity_id="sensor.load",
+        )
+
+    # load_kw * 12 = 1.2 kW base
+    # delta = 8 - 18 = -10, forecast 8 < threshold 15
+    # adjustment = -(-10) × 0.3 = 3.0
+    # total = 1.2 + 3.0 = 4.2
+    assert prediction[0]["kw"] == pytest.approx(4.2, abs=0.1)
+
+
+@pytest.mark.asyncio
+async def test_load_delta_fallback_no_temp_data(mock_hass):
+    """FR-008: When avg_temp is None, fall back to absolute threshold logic."""
+    from unittest.mock import patch
+
+    predictor = LoadPredictor(mock_hass)
+    predictor.testing_bypass_history = True
+    start = datetime(2025, 2, 20, 12, 0, 0)
+
+    # Profile WITHOUT temperature data
+    mock_profile = {"12:00": {"load_kw": 0.1, "avg_temp": None}}
+
+    temp_forecast = [{"datetime": start, "temperature": 35.0, "condition": "sunny"}]
+
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kWh"})
+
+    with patch(
+        "custom_components.house_battery_control.historical_analyzer.build_historical_profile",
+        return_value=mock_profile,
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_valid_data",
+        return_value=[],
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_temp_data",
+        return_value=[],
+    ):
+        prediction = await predictor.async_predict(
+            start,
+            temp_forecast=temp_forecast,
+            high_sensitivity=0.2,
+            high_threshold=25.0,
+            duration_hours=1,
+            load_entity_id="sensor.load",
+        )
+
+    # load_kw * 12 = 1.2 kW base
+    # No temp history → absolute fallback: (35 - 25) × 0.2 = 2.0
+    # total = 1.2 + 2.0 = 3.2
+    assert prediction[0]["kw"] == pytest.approx(3.2, abs=0.1)
+
+
+@pytest.mark.asyncio
+async def test_load_delta_floor_at_zero(mock_hass):
+    """FR-009: Negative delta adjustment cannot make load negative (0.0 floor)."""
+    from unittest.mock import patch
+
+    predictor = LoadPredictor(mock_hass)
+    predictor.testing_bypass_history = True
+    start = datetime(2025, 2, 20, 12, 0, 0)
+
+    # Very small base load, massive negative delta
+    mock_profile = {"12:00": {"load_kw": 0.01, "avg_temp": 40.0}}
+
+    temp_forecast = [{"datetime": start, "temperature": 26.0, "condition": "sunny"}]
+
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kWh"})
+
+    with patch(
+        "custom_components.house_battery_control.historical_analyzer.build_historical_profile",
+        return_value=mock_profile,
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_valid_data",
+        return_value=[],
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_temp_data",
+        return_value=[],
+    ):
+        prediction = await predictor.async_predict(
+            start,
+            temp_forecast=temp_forecast,
+            high_sensitivity=0.5,
+            high_threshold=25.0,
+            duration_hours=1,
+            load_entity_id="sensor.load",
+        )
+
+    # load_kw * 12 = 0.12 kW base
+    # delta = 26 - 40 = -14, forecast 26 > threshold 25
+    # adjustment = -14 × 0.5 = -7.0
+    # total = 0.12 - 7.0 = -6.88 → floored to 0.0
+    assert prediction[0]["kw"] == 0.0
+
