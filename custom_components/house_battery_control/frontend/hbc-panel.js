@@ -9,12 +9,12 @@ import {
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState !== "visible") return;
   if (!location.pathname.startsWith("/hbc-panel")) return;
-  // Brief delay to let HA finish its own reconnection
+  // Minimal delay for event loop to settle, then reload if panel is missing
   setTimeout(() => {
     if (!document.querySelector("hbc-panel")) {
       location.reload();
     }
-  }, 2000);
+  }, 100);
 });
 
 class HBCPanel extends LitElement {
