@@ -191,27 +191,40 @@ class LoadPredictor:
             if time_slot in historical_profile:
                 slot_hist_temp = historical_profile[time_slot].get("avg_temp")
 
+            # FR-010/011: track diagnostic values for plan output
+            temp_delta = None
+            load_adjustment = 0.0
+
             if slot_hist_temp is not None:
                 # Delta-based: compare forecast to historical avg for this slot
                 # FR-004: forecast > high_threshold → adjust by delta × sensitivity
                 # FR-005: forecast < low_threshold → adjust by -delta × sensitivity
                 # FR-009: negative adjustments allowed (floor at 0.0 kW applied later)
-                temp_delta = temp - slot_hist_temp
+                temp_delta = round(temp - slot_hist_temp, 2)
                 if temp > high_threshold:
-                    derived_kw += temp_delta * high_sensitivity
+                    load_adjustment = round(temp_delta * high_sensitivity, 2)
+                    derived_kw += load_adjustment
                 elif temp < low_threshold:
-                    derived_kw += (-temp_delta) * low_sensitivity
+                    load_adjustment = round((-temp_delta) * low_sensitivity, 2)
+                    derived_kw += load_adjustment
             else:
                 # Fallback: original absolute threshold (FR-008)
                 if temp > high_threshold:
-                    derived_kw += (temp - high_threshold) * high_sensitivity
+                    load_adjustment = round((temp - high_threshold) * high_sensitivity, 2)
+                    derived_kw += load_adjustment
                 elif temp < low_threshold:
-                    derived_kw += (low_threshold - temp) * low_sensitivity
+                    load_adjustment = round((low_threshold - temp) * low_sensitivity, 2)
+                    derived_kw += load_adjustment
 
             # Round off to 2 decimals (preserve 0.0 floor)
             kw_final = round(max(0.0, derived_kw), 2)
 
-            prediction.append({"start": current.isoformat(), "kw": kw_final})
+            prediction.append({
+                "start": current.isoformat(),
+                "kw": kw_final,
+                "temp_delta": temp_delta,
+                "load_adjustment_kw": load_adjustment,
+            })
             current += timedelta(minutes=5)
 
         return prediction

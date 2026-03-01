@@ -66,6 +66,8 @@ As the system, I need to associate temperature with each 5-minute load slot in t
 - **FR-007**: The system MUST use the existing configured `weather_entity` to fetch historical temperature data via `attributes.temperature` from recorder history.
 - **FR-008**: If weather entity temperature history is unavailable, the system MUST fall back to the existing absolute threshold behaviour (backward compatibility).
 - **FR-009**: Negative delta adjustments (reducing predicted load) MUST be applied without limit. The final predicted load per slot is naturally clamped at 0.0 kW since negative consumption is not physically possible.
+- **FR-010**: Each prediction slot MUST include `temp_delta` (forecast temperature minus historical average temperature for that slot, or `null` if unavailable).
+- **FR-011**: Each prediction slot MUST include `load_adjustment_kw` (the kW adjustment applied due to temperature delta, or `0.0` if no adjustment).
 
 ### Configuration
 

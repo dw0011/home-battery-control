@@ -823,3 +823,60 @@ async def test_load_delta_floor_at_zero(mock_hass):
     # total = 0.12 - 7.0 = -6.88 → floored to 0.0
     assert prediction[0]["kw"] == 0.0
 
+
+@pytest.mark.asyncio
+async def test_load_prediction_includes_diagnostic_fields(mock_hass):
+    """FR-010/011: Prediction output must include temp_delta and load_adjustment_kw."""
+    from unittest.mock import patch
+
+    predictor = LoadPredictor(mock_hass)
+    predictor.testing_bypass_history = True
+    start = datetime(2025, 2, 20, 12, 0, 0)
+
+    mock_profile = {"12:00": {"load_kw": 0.1, "avg_temp": 20.0}}
+    temp_forecast = [{"datetime": start, "temperature": 35.0, "condition": "sunny"}]
+
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kWh"})
+
+    with patch(
+        "custom_components.house_battery_control.historical_analyzer.build_historical_profile",
+        return_value=mock_profile,
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_valid_data",
+        return_value=[],
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_temp_data",
+        return_value=[],
+    ):
+        prediction = await predictor.async_predict(
+            start,
+            temp_forecast=temp_forecast,
+            high_sensitivity=0.2,
+            high_threshold=25.0,
+            duration_hours=1,
+            load_entity_id="sensor.load",
+        )
+
+    slot = prediction[0]
+    # FR-010: temp_delta present and correct (35 - 20 = 15)
+    assert "temp_delta" in slot
+    assert slot["temp_delta"] == pytest.approx(15.0, abs=0.1)
+    # FR-011: load_adjustment_kw present and correct (15 × 0.2 = 3.0)
+    assert "load_adjustment_kw" in slot
+    assert slot["load_adjustment_kw"] == pytest.approx(3.0, abs=0.1)
+
+
+@pytest.mark.asyncio
+async def test_load_prediction_diagnostic_null_without_temp_history(mock_hass):
+    """FR-010: temp_delta is None when no historical temperature data."""
+    predictor = LoadPredictor(mock_hass)
+    start = datetime(2025, 2, 20, 12, 0, 0)
+
+    prediction = await predictor.async_predict(
+        start, duration_hours=1, load_entity_id="sensor.load"
+    )
+
+    # Fallback profile has no temp history
+    assert prediction[0]["temp_delta"] is None
+
+
