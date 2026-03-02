@@ -572,10 +572,10 @@ async def test_load_delta_hot_day_positive(mock_hass):
         )
 
     # load_kw * 12 = 0.1 * 12 = 1.2 kW base
-    # delta = 35 - 20 = 15, forecast 35 > threshold 25
-    # adjustment = 15 × 0.2 = 3.0
-    # total = 1.2 + 3.0 = 4.2
-    assert prediction[0]["kw"] == pytest.approx(4.2, abs=0.1)
+    # excess_hist = max(0, 20-25) = 0, excess_forecast = max(0, 35-25) = 10
+    # adjustment = (10 - 0) × 0.2 = 2.0
+    # total = 1.2 + 2.0 = 3.2
+    assert prediction[0]["kw"] == pytest.approx(3.2, abs=0.1)
 
 
 @pytest.mark.asyncio
@@ -696,8 +696,50 @@ async def test_load_delta_within_band_no_adjustment(mock_hass):
         )
 
     # load_kw * 12 = 1.2 kW base
-    # 22°C is within 15-25 band: NO adjustment
+    # Both in band: excess_hist=0, excess_forecast=0, adj=0
     assert prediction[0]["kw"] == pytest.approx(1.2, abs=0.1)
+
+
+@pytest.mark.asyncio
+async def test_load_delta_history_hot_forecast_mild(mock_hass):
+    """FR-004: History 30°C (above threshold), forecast 22°C (in band) → reduce load."""
+    from unittest.mock import patch
+
+    predictor = LoadPredictor(mock_hass)
+    predictor.testing_bypass_history = True
+    start = datetime(2025, 2, 20, 12, 0, 0)
+
+    mock_profile = {"12:00": {"load_kw": 0.3, "avg_temp": 30.0}}
+
+    temp_forecast = [{"datetime": start, "temperature": 22.0, "condition": "sunny"}]
+
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kWh"})
+
+    with patch(
+        "custom_components.house_battery_control.historical_analyzer.build_historical_profile",
+        return_value=mock_profile,
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_valid_data",
+        return_value=[],
+    ), patch(
+        "custom_components.house_battery_control.historical_analyzer.extract_temp_data",
+        return_value=[],
+    ):
+        prediction = await predictor.async_predict(
+            start,
+            temp_forecast=temp_forecast,
+            high_sensitivity=0.2,
+            high_threshold=25.0,
+            duration_hours=1,
+            load_entity_id="sensor.load",
+        )
+
+    # load_kw * 12 = 0.3 * 12 = 3.6 kW base
+    # excess_hist = max(0, 30-25) = 5, excess_forecast = max(0, 22-25) = 0
+    # adjustment = (0 - 5) × 0.2 = -1.0
+    # total = 3.6 - 1.0 = 2.6
+    assert prediction[0]["kw"] == pytest.approx(2.6, abs=0.1)
+    assert prediction[0]["load_adjustment_kw"] == pytest.approx(-1.0, abs=0.01)
 
 
 @pytest.mark.asyncio
@@ -735,10 +777,10 @@ async def test_load_delta_cold_snap(mock_hass):
         )
 
     # load_kw * 12 = 1.2 kW base
-    # delta = 8 - 18 = -10, forecast 8 < threshold 15
-    # adjustment = -(-10) × 0.3 = 3.0
-    # total = 1.2 + 3.0 = 4.2
-    assert prediction[0]["kw"] == pytest.approx(4.2, abs=0.1)
+    # excess_hist_low = max(0, 15-18) = 0, excess_forecast_low = max(0, 15-8) = 7
+    # adjustment = (7 - 0) × 0.3 = 2.1
+    # total = 1.2 + 2.1 = 3.3
+    assert prediction[0]["kw"] == pytest.approx(3.3, abs=0.1)
 
 
 @pytest.mark.asyncio
@@ -861,9 +903,11 @@ async def test_load_prediction_includes_diagnostic_fields(mock_hass):
     # FR-010: temp_delta present and correct (35 - 20 = 15)
     assert "temp_delta" in slot
     assert slot["temp_delta"] == pytest.approx(15.0, abs=0.1)
-    # FR-011: load_adjustment_kw present and correct (15 × 0.2 = 3.0)
+    # FR-011: load_adjustment_kw present and correct
+    # excess_hist = max(0, 20-25) = 0, excess_forecast = max(0, 35-25) = 10
+    # adj = (10-0) × 0.2 = 2.0
     assert "load_adjustment_kw" in slot
-    assert slot["load_adjustment_kw"] == pytest.approx(3.0, abs=0.1)
+    assert slot["load_adjustment_kw"] == pytest.approx(2.0, abs=0.1)
 
 
 @pytest.mark.asyncio

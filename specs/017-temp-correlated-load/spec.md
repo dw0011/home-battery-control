@@ -60,9 +60,9 @@ As the system, I need to associate temperature with each 5-minute load slot in t
 - **FR-001**: The system MUST fetch outdoor temperature history for the same 5-day period used for load history.
 - **FR-002**: The `build_historical_profile()` function MUST return both average load AND average temperature per 5-minute time slot.
 - **FR-003**: The load prediction MUST calculate `temp_delta = forecast_temp - historical_avg_temp` for each slot.
-- **FR-004**: When `forecast_temp > high_threshold`, the load MUST be adjusted by `temp_delta × high_sensitivity` (positive delta = increase, negative delta = decrease).
-- **FR-005**: When `forecast_temp < low_threshold`, the load MUST be adjusted by `-temp_delta × low_sensitivity` (negative delta = colder = increase load, positive delta = warmer = decrease load).
-- **FR-006**: When forecast temp is within the threshold band (`low_threshold` to `high_threshold`), NO temperature adjustment MUST be applied.
+- **FR-004**: For cooling load: `excess_hist = max(0, historical_avg - high_threshold)`, `excess_forecast = max(0, forecast - high_threshold)`, `adjustment = (excess_forecast - excess_hist) × high_sensitivity`. Positive = more cooling needed, negative = less cooling needed.
+- **FR-005**: For heating load: `excess_hist = max(0, low_threshold - historical_avg)`, `excess_forecast = max(0, low_threshold - forecast)`, `adjustment = (excess_forecast - excess_hist) × low_sensitivity`. Positive = more heating needed, negative = less heating needed.
+- **FR-006**: When both forecast and historical temps are within the threshold band, both excess values are zero, so no adjustment is applied naturally.
 - **FR-007**: The system MUST use the existing configured `weather_entity` to fetch historical temperature data via `attributes.temperature` from recorder history.
 - **FR-008**: If weather entity temperature history is unavailable, the system MUST fall back to the existing absolute threshold behaviour (backward compatibility).
 - **FR-009**: Negative delta adjustments (reducing predicted load) MUST be applied without limit. The final predicted load per slot is naturally clamped at 0.0 kW since negative consumption is not physically possible.

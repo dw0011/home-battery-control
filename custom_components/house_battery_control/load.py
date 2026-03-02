@@ -196,17 +196,20 @@ class LoadPredictor:
             load_adjustment = 0.0
 
             if slot_hist_temp is not None:
-                # Delta-based: compare forecast to historical avg for this slot
-                # FR-004: forecast > high_threshold → adjust by delta × sensitivity
-                # FR-005: forecast < low_threshold → adjust by -delta × sensitivity
-                # FR-009: negative adjustments allowed (floor at 0.0 kW applied later)
+                # Excess-based formula (FR-004/005)
+                # Cooling: only the portion above high_threshold matters
+                excess_hist_high = max(0.0, slot_hist_temp - high_threshold)
+                excess_forecast_high = max(0.0, temp - high_threshold)
+                high_adj = (excess_forecast_high - excess_hist_high) * high_sensitivity
+
+                # Heating: only the portion below low_threshold matters
+                excess_hist_low = max(0.0, low_threshold - slot_hist_temp)
+                excess_forecast_low = max(0.0, low_threshold - temp)
+                low_adj = (excess_forecast_low - excess_hist_low) * low_sensitivity
+
+                load_adjustment = round(high_adj + low_adj, 2)
                 temp_delta = round(temp - slot_hist_temp, 2)
-                if temp > high_threshold:
-                    load_adjustment = round(temp_delta * high_sensitivity, 2)
-                    derived_kw += load_adjustment
-                elif temp < low_threshold:
-                    load_adjustment = round((-temp_delta) * low_sensitivity, 2)
-                    derived_kw += load_adjustment
+                derived_kw += load_adjustment
             else:
                 # Fallback: original absolute threshold (FR-008)
                 if temp > high_threshold:
