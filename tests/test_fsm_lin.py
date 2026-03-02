@@ -234,8 +234,149 @@ class TestNoImportPeriodLP:
             if step_time and hasattr(step_time, "hour"):
                 if 15 <= step_time.hour < 21:
                     grid_import = step.get("grid_kw", 0.0)
-                    # Grid import should be zero or negative (export) during no-import window
                     assert grid_import <= 0.01, (
                         f"Grid import {grid_import} at {step_time} should be ~0 during no-import period"
                     )
 
+
+# ---------------------------------------------------------------------------
+#  Acquisition Cost Gate tests (Feature 019)
+# ---------------------------------------------------------------------------
+
+
+class TestAcqGateBlocksUnprofitableDischarge:
+    """T001: Gate must block DISCHARGE_GRID when export price < acquisition cost."""
+
+    def test_acq_gate_blocks_unprofitable_discharge(self):
+        """FR-001/007/009: When export price is below acquisition cost,
+        the solver must NOT return DISCHARGE_GRID — neither in the plan
+        nor as the immediate action."""
+        context = FSMContext(
+            soc=95.0,  # Nearly full — solver incentivised to discharge
+            load_power=0.5,
+            solar_production=0.0,
+            grid_voltage=240.0,
+            current_price=5.0,
+            forecast_price=[
+                {"import_price": 5.0, "export_price": 10.0}
+                for _ in range(28)
+            ],
+            forecast_solar=[{"kw": 0.0} for _ in range(28)],
+            forecast_load=[{"kw": 0.5} for _ in range(28)],
+            config={
+                "battery_capacity": 27.0,
+                "battery_rate_max": 6.3,
+                "inverter_limit": 10.0,
+                "round_trip_efficiency": 0.90,
+            },
+        )
+        # Acquisition cost ABOVE export price → gate should block
+        context.acquisition_cost = 15.0
+        context.current_export_price = 10.0
+
+        fsm = LinearBatteryStateMachine()
+        result = fsm.calculate_next_state(context)
+
+        # FR-007: Immediate action must not be DISCHARGE_GRID
+        assert result.state != "DISCHARGE_GRID", (
+            f"Gate failed: state={result.state}, export=10 < acq_cost=15"
+        )
+
+        # FR-001: No plan step should show DISCHARGE_GRID when export < acq cost
+        if result.future_plan:
+            for i, step in enumerate(result.future_plan):
+                if step.get("state") == "DISCHARGE_GRID":
+                    step_export = step.get("export_price", 0)
+                    step_acq = step.get("acquisition_cost", 0)
+                    assert step_export >= step_acq, (
+                        f"Plan step {i}: DISCHARGE_GRID with export={step_export} "
+                        f"< acq_cost={step_acq}"
+                    )
+
+
+class TestAcqGateAllowsProfitableDischarge:
+    """T002: Gate must allow DISCHARGE_GRID when export price > acquisition cost."""
+
+    def test_acq_gate_allows_profitable_discharge(self):
+        """FR-001: When export price exceeds acquisition cost, discharge is
+        profitable and should be allowed."""
+        context = FSMContext(
+            soc=95.0,
+            load_power=0.5,
+            solar_production=0.0,
+            grid_voltage=240.0,
+            current_price=5.0,
+            forecast_price=[
+                {"import_price": 5.0, "export_price": 50.0}
+                for _ in range(28)
+            ],
+            forecast_solar=[{"kw": 0.0} for _ in range(28)],
+            forecast_load=[{"kw": 0.5} for _ in range(28)],
+            config={
+                "battery_capacity": 27.0,
+                "battery_rate_max": 6.3,
+                "inverter_limit": 10.0,
+                "round_trip_efficiency": 0.90,
+            },
+        )
+        # Acquisition cost well below export price → discharge profitable
+        context.acquisition_cost = 5.0
+        context.current_export_price = 50.0
+
+        fsm = LinearBatteryStateMachine()
+        result = fsm.calculate_next_state(context)
+
+        has_grid_discharge = (
+            result.state == "DISCHARGE_GRID"
+            or any(
+                s.get("state") == "DISCHARGE_GRID"
+                for s in (result.future_plan or [])
+            )
+        )
+        assert has_grid_discharge, (
+            "Profitable discharge blocked: export=50 > acq_cost=5"
+        )
+
+
+class TestAcqGatePropagatesSoC:
+    """T003: When gate overrides discharge, battery retains energy."""
+
+    def test_acq_gate_propagates_soc(self):
+        """FR-002/003/005: After gate override, no DISCHARGE_GRID should appear
+        when export < acquisition cost. Acq cost should remain positive."""
+        context = FSMContext(
+            soc=80.0,
+            load_power=0.5,
+            solar_production=0.0,
+            grid_voltage=240.0,
+            current_price=5.0,
+            forecast_price=[
+                {"import_price": 5.0, "export_price": 8.0}
+                for _ in range(28)
+            ],
+            forecast_solar=[{"kw": 0.0} for _ in range(28)],
+            forecast_load=[{"kw": 0.5} for _ in range(28)],
+            config={
+                "battery_capacity": 27.0,
+                "battery_rate_max": 6.3,
+                "inverter_limit": 10.0,
+                "round_trip_efficiency": 0.90,
+            },
+        )
+        # Acquisition cost above all export prices → all discharge gated
+        context.acquisition_cost = 20.0
+        context.current_export_price = 8.0
+
+        fsm = LinearBatteryStateMachine()
+        result = fsm.calculate_next_state(context)
+
+        if result.future_plan:
+            for i, step in enumerate(result.future_plan):
+                assert step.get("state") != "DISCHARGE_GRID", (
+                    f"Plan step {i}: DISCHARGE_GRID found with export=8 < acq=20"
+                )
+            for i, step in enumerate(result.future_plan):
+                step_acq = step.get("acquisition_cost", 0)
+                assert step_acq > 0, (
+                    f"Plan step {i}: acquisition_cost={step_acq} should be positive"
+                )
