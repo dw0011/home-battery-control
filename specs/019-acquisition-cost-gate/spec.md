@@ -74,6 +74,9 @@ As a user, I want the system to use my real historical acquisition cost from per
 - **FR-004**: The initial acquisition cost at step 0 MUST come from the persisted coordinator value, falling back to 0.10 c/kWh only for fresh installs with no storage.
 - **FR-005**: The plan table's "Acq. Cost" column MUST reflect the per-step acquisition cost after any overrides have been applied.
 - **FR-006**: The pre-solve static gate (current L172-181 in lin_fsm.py) MUST be removed — it is replaced by the row-by-row mechanism.
+- **FR-007**: The gate MUST also apply to the immediate action classification (step 0). If the solver returns DISCHARGE_GRID for step 0 but export price < acquisition cost, the actual battery command MUST be overridden to SELF_CONSUMPTION.
+- **FR-008**: The gate MUST only override discharge-to-grid (`dg`). Discharge-to-home (`dh`) MUST proceed normally — the gate protects against unprofitable export, not self-consumption.
+- **FR-009**: The immediate action classifier MUST use the gated `dg` value (zero after override), not the solver's raw `dg_0`. This ensures the actual battery command reflects the gate decision.
 
 ## Success Criteria
 
@@ -82,3 +85,11 @@ As a user, I want the system to use my real historical acquisition cost from per
 - **SC-001**: No DISCHARGE_GRID state appears in the plan when the export price is below the acquisition cost at that step.
 - **SC-002**: After a discharge override, subsequent rows show higher SoC than the solver originally computed.
 - **SC-003**: After restart with persisted data, step 0's acquisition cost matches the stored value.
+
+## Clarifications
+
+### Session 2026-03-02
+
+- Q: Should the gate apply to the immediate battery command (step 0) or only the plan display? → A: Both — gate applies to immediate action AND sequence builder.
+- Q: When overriding discharge, should home discharge (dh) also be zeroed? → A: No — only grid export (dg) is overridden; home discharge proceeds normally.
+- Q: Should the immediate action classifier use gated or raw solver values? → A: Gated values — ensures actual battery command reflects the gate.
