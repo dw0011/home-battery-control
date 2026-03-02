@@ -122,16 +122,39 @@ Solar Interval {
 LoadPredictor builds a statistical profile from your actual usage history:
 
 1. Fetches 5 days of history from the HA recorder for the configured load entity
-2. Passes through `historical_analyzer.py` to build an average profile per 5-minute time slot
-3. Handles both **power sensors** (kW, used directly) and **energy sensors** (kWh, converted via `kW = delta_kWh × 12`)
-4. Applies **temperature adjustments**: if the weather forecast shows temperatures above/below your configured thresholds, the load prediction is increased by `sensitivity × degrees_beyond_threshold`
+2. Fetches 5 days of temperature history from the configured `weather_entity` (`attributes.temperature`)
+3. Passes both through `historical_analyzer.py` to build an average profile per 5-minute time slot, containing both load (kW) and average temperature (°C)
+4. Handles both **power sensors** (kW, used directly) and **energy sensors** (kWh, converted via `kW = delta_kWh × 12`)
+5. Applies **excess-based temperature adjustments**: compares how much historical HVAC load was driven by temperature versus how much will be needed today
+
+#### Temperature Adjustment Formula
+
+```
+# Cooling (above high_threshold):
+excess_hist = max(0, historical_avg_temp - high_threshold)
+excess_forecast = max(0, forecast_temp - high_threshold)
+cooling_adj = (excess_forecast - excess_hist) × high_sensitivity
+
+# Heating (below low_threshold):
+excess_hist = max(0, low_threshold - historical_avg_temp)
+excess_forecast = max(0, low_threshold - forecast_temp)
+heating_adj = (excess_forecast - excess_hist) × low_sensitivity
+
+adjustment = cooling_adj + heating_adj
+```
+
+This ensures that if history included aircon load (e.g. 30°C) but today is mild (22°C), the prediction is **reduced**. Conversely, if today is hotter than history, load is **increased**.
+
+If no temperature history is available, the system falls back to absolute threshold behaviour (applying `sensitivity × degrees_beyond_threshold`).
 
 Each interval:
 
 ```
 Load Interval {
-    start: str (ISO 8601)    # Interval start
-    kw:    float             # Predicted household load in kW (dynamically scaled)
+    start:              str (ISO 8601)  # Interval start
+    kw:                 float           # Predicted household load in kW (dynamically scaled)
+    temp_delta:         float | null    # Forecast temp minus historical avg temp (°C)
+    load_adjustment_kw: float           # kW adjustment applied due to temperature
 }
 ```
 

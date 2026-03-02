@@ -48,14 +48,16 @@ Cumulative energy sensors, forecasting sources, and battery specifications.
 
 ### Temperature Calibration
 
-These adjust the load forecast based on temperature. If your house uses more power in extreme heat (air conditioning) or cold (heating), configure these.
+These adjust the load forecast based on temperature. HBC compares the **forecast temperature** against the **historical average temperature** for each time slot to calculate how much HVAC load to add or remove from the prediction.
+
+The adjustment uses an **excess-based formula**: only the portion of temperature that crosses a threshold contributes to the adjustment. For example, if history was 30°C and the high threshold is 25°C, 5°C of cooling load was baked into the historical average. If today's forecast is 22°C (no cooling needed), the prediction is reduced by `5 × sensitivity` kW.
 
 | Key | Label | Default | Notes |
 |---|---|---|---|
-| `load_high_temp_sensitivity` | High Temp Sensitivity | `0.0` | kW increase per °C above threshold |
-| `load_low_temp_sensitivity` | Low Temp Sensitivity | `0.0` | kW increase per °C below threshold |
-| `load_high_temp_threshold` | High Temp Threshold | `25.0` | °C above which load increases |
-| `load_low_temp_threshold` | Low Temp Threshold | `15.0` | °C below which load increases |
+| `load_high_temp_sensitivity` | High Temp Sensitivity | `0.0` | kW adjustment per °C of cooling excess above threshold |
+| `load_low_temp_sensitivity` | Low Temp Sensitivity | `0.0` | kW adjustment per °C of heating excess below threshold |
+| `load_high_temp_threshold` | High Temp Threshold | `25.0` | °C above which cooling load is expected |
+| `load_low_temp_threshold` | Low Temp Threshold | `15.0` | °C below which heating load is expected |
 
 ### Battery Specifications
 
