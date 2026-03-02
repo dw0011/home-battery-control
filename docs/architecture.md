@@ -105,7 +105,7 @@ FSMResult(
 | `test_coordinator.py` | Update cycle, sensor reading, error recovery, cost persistence |
 | `test_fsm_base.py` | FSMContext/FSMResult contracts |
 | `test_fsm_default.py` | Rule-based FSM state transitions |
-| `test_fsm_lin.py` | LP solver execution, target SoC, no-import periods |
+| `test_fsm_lin.py` | LP solver execution, target SoC, no-import periods, acquisition cost gate |
 | `test_dp.py` | DP solver (alternative engine) |
 | `test_execute.py` | Executor deduplication and script mapping |
 | `test_load.py` | Load prediction from history, interpolation, midnight resets |
@@ -122,7 +122,7 @@ FSMResult(
 
 ```bash
 pip install -r requirements_test.txt
-python -m pytest tests/ -v          # Full suite (150 tests)
+python -m pytest tests/ -v          # Full suite (174 tests)
 python -m pytest tests/ -v -k fsm   # FSM tests only
 ruff check custom_components/ tests/ # Linting
 ```

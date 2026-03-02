@@ -2,7 +2,6 @@
 lin_fsm.py — LP FSM (SciPy HiGHS)
 ===================================
 Implements all system requirements from specs/03-lp-fsm-system/system_requirements.md.
-34 tests across 6 suites verify compliance.
 """
 try:
     from .base import BatteryStateMachine, FSMContext, FSMResult
@@ -113,7 +112,6 @@ class LinearBatteryController:
         load_forecast: list[float],
         pv_forecast: list[float],
         acquisition_cost: float = 0.0,
-        raw_acquisition_cost: float = 0.0,
         reserve_soc: float = 0.0,
         no_import_steps: set[int] | None = None,
     ):
@@ -140,45 +138,34 @@ class LinearBatteryController:
 
         # --- Objective function (§7 of system requirements) ---
         obj = np.zeros(num_vars)
-        bounds = []
 
         _blocked = no_import_steps or set()
+        bounds = [None] * num_vars  # Pre-allocate for indexed assignment
+
         for i in range(number_step):
-            # Grid import: use raw price (can be negative = incentive to import)
-            # FR-001: Solver must see the economic benefit of negative import prices
-            # FR-002: Upper-bound g[i] during negative prices to prevent unbounded LP
+            # Grid import (g): raw price, no-import periods, negative price cap
             obj[g_off + i] = price_buy[i]
             if i in _blocked:
-                # No-import period: force grid import to zero (Feature 010)
-                bounds.append((0.0, 0.0))
+                bounds[g_off + i] = (0.0, 0.0)
             elif price_buy[i] < 0:
-                # Physical bound: can't import more than load + battery charge rate
-                max_import = load_forecast[i] + charge_limit
-                bounds.append((0.0, max_import))
+                bounds[g_off + i] = (0.0, load_forecast[i] + charge_limit)
             else:
-                bounds.append((0.0, None))
+                bounds[g_off + i] = (0.0, None)
 
-        for i in range(number_step):
-            # Charge: opportunity cost = max(ε, sell_price) + tiebreaker — §7.2
+            # Charge (c): opportunity cost + tiebreaker — §7.2
             obj[c_off + i] = max(0.001, price_sell[i]) + max(0.0, price_buy[i]) / 1000.0
-            bounds.append((0.0, charge_limit))
+            bounds[c_off + i] = (0.0, charge_limit)
 
-        for i in range(number_step):
-            # Discharge to home: opportunity cost = max(ε, sell_price)
-            obj[dh_off + i] = max(0.001, price_sell[i])
+            # Discharge to home (dh): opportunity cost = max(ε, sell_price)
+            sell_opp = max(0.001, price_sell[i])
+            obj[dh_off + i] = sell_opp
             max_home = max(0.0, energy[i])
-            bounds.append((-max_home, 0.0))
+            bounds[dh_off + i] = (-max_home, 0.0)
 
-        for i in range(number_step):
-            # Discharge to grid: opportunity cost = max(ε, sell_price)
-            # FR-002: Lock grid discharge to zero when export is below raw acquisition cost
-            obj[dg_off + i] = max(0.001, price_sell[i])
-            if price_sell[i] < raw_acquisition_cost:
-                bounds.append((0.0, 0.0))  # Export unprofitable — gate closed
-            else:
-                max_home = max(0.0, energy[i])
-                max_grid = max(0.0, dis_limit - max_home)
-                bounds.append((-max_grid, 0.0))
+            # Discharge to grid (dg): opportunity cost = max(ε, sell_price)
+            obj[dg_off + i] = sell_opp
+            max_grid = max(0.0, dis_limit - max_home)
+            bounds[dg_off + i] = (-max_grid, 0.0)
 
         # Battery state bounds with dynamic feasibility gradient — §8
         reserve_kwh = capacity * (reserve_soc / 100.0)
@@ -190,7 +177,7 @@ class LinearBatteryController:
                 obj[b_off + i] = 0.0
             physically_accessible = current + i * charge_limit * eta_in
             safe_lb = min(reserve_kwh, physically_accessible)
-            bounds.append((safe_lb, capacity))
+            bounds[b_off + i] = (safe_lb, capacity)
 
         # --- Inequality constraints: grid balance ---
         # g[i] - c[i] - dh[i] - dg[i] >= energy[i]
@@ -271,6 +258,16 @@ class LinearBatteryController:
             else:
                 state = "SELF_CONSUMPTION"
 
+            # --- Acquisition cost gate — FR-001: row-by-row check ---
+            if state == "DISCHARGE_GRID" and price_sell[i] < running_cost:
+                # FR-002: Battery retains energy — adjust state for subsequent steps
+                running_capacity = running_capacity + step_dg
+                step_dg = 0.0
+                state = "SELF_CONSUMPTION"
+                # FR-005: Recalculate net grid without export
+                net_grid_kwh = load_forecast[i] - pv_forecast[i] + step_c - step_dh - step_dg
+                net_grid_kw = net_grid_kwh * (60.0 / 5.0)
+
             # --- Cumulative cost tracking — §3.4 (raw prices, net grid flow) ---
             if net_grid_kwh > 0:
                 running_cum_cost += net_grid_kwh * price_buy[i]
@@ -288,6 +285,10 @@ class LinearBatteryController:
                 "acquisition_cost": running_cost,
                 "cumulative_cost": running_cum_cost,
             })
+
+        # --- FR-007/009: Gate immediate action using gated step 0 ---
+        if sequence and sequence[0]["state"] != "DISCHARGE_GRID":
+            dg_0 = 0.0  # Gate overrode step 0 — suppress grid discharge command
 
         return b_1 / capacity, objective_value, dh_0, dg_0, sequence
 
@@ -310,43 +311,38 @@ class LinearBatteryStateMachine(BatteryStateMachine):
         self.controller.step = number_step
 
         # --- Extract & pad forecast arrays — §5 ---
+        def _pad(arr, n, default=0.0):
+            """Return value at index t, clamping to last element or default."""
+            if not arr:
+                return default
+            entry = arr[min(t, len(arr) - 1)]
+            if isinstance(entry, dict):
+                return float(entry.get("kw", default))
+            return float(entry)
+
         price_buy = [0.0] * number_step
         price_sell = [0.0] * number_step
-        for t in range(number_step):
-            if t == 0:
+        price_buy[0] = float(context.current_price)
+        price_sell[0] = float(context.current_export_price)
+        for t in range(1, number_step):
+            if not context.forecast_price:
                 price_buy[t] = float(context.current_price)
-                price_sell[t] = float(context.current_export_price)
-                continue
-
-            idx = min(t, len(context.forecast_price) - 1) if context.forecast_price else 0
-            if idx < len(context.forecast_price):
-                entry = context.forecast_price[idx]
+                price_sell[t] = float(context.current_price * 0.8)
+            else:
+                entry = context.forecast_price[min(t, len(context.forecast_price) - 1)]
                 if isinstance(entry, dict):
-                    price_buy[t] = float(entry.get("import_price", 0.0))
-                    price_sell[t] = float(entry.get(
-                        "export_price",
-                        float(entry.get("import_price", 0.0)) * 0.8,
-                    ))
+                    imp = float(entry.get("import_price", 0.0))
+                    price_buy[t] = imp
+                    price_sell[t] = float(entry.get("export_price", imp * 0.8))
                 else:
                     price_buy[t] = float(context.current_price)
                     price_sell[t] = float(context.current_price * 0.8)
-            else:
-                price_buy[t] = float(context.current_price)
-                price_sell[t] = float(context.current_price * 0.8)
 
         load_f = [0.0] * number_step
         pv_f = [0.0] * number_step
         for t in range(number_step):
-            # Solar
-            idx = min(t, len(context.forecast_solar) - 1) if context.forecast_solar else 0
-            if idx < len(context.forecast_solar):
-                entry = context.forecast_solar[idx]
-                pv_f[t] = float(entry.get("kw", 0.0)) if isinstance(entry, dict) else float(entry)
-            # Load
-            idx = min(t, len(context.forecast_load) - 1) if context.forecast_load else 0
-            if idx < len(context.forecast_load):
-                entry = context.forecast_load[idx]
-                load_f[t] = float(entry.get("kw", 0.0)) if isinstance(entry, dict) else float(entry)
+            pv_f[t] = _pad(context.forecast_solar, t)
+            load_f[t] = _pad(context.forecast_load, t)
 
         # kW → kWh per 5-minute step — §4
         load_f = [kw * (5.0 / 60.0) for kw in load_f]
@@ -409,7 +405,6 @@ class LinearBatteryStateMachine(BatteryStateMachine):
                     load_forecast=load_f,
                     pv_forecast=pv_f,
                     acquisition_cost=terminal_valuation,
-                    raw_acquisition_cost=context.acquisition_cost,
                     reserve_soc=float(context.config.get("reserve_soc", 0.0)),
                     no_import_steps=no_import_steps if no_import_steps else None,
                 )
