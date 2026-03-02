@@ -32,6 +32,8 @@ REQUIRED_PLAN_COLUMNS = [
     "PV Forecast",
     "Load Forecast",
     "Air Temp Forecast",
+    "Temp Delta",
+    "Load Adj.",
     "SoC Forecast",
     "Interval Cost",
     "Cumul. Cost",
