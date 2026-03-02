@@ -239,7 +239,7 @@ The system calculates the true cost of stored energy rather than just using a st
 - **Grid Charging**: Valued at the current Amber import price.
 - **Solar Charging**: Valued at the *opportunity cost* (what you could have earned if you exported that solar to the Amber grid instead).
 
-This incoming energy cost is then mathematically blended (weighted average) against the existing energy in the battery to update the `acquisition_cost`. This dynamic acquisition cost is fed into the FSM solver as a floor price, preventing the battery from exporting energy for less than it cost to acquire.
+This incoming energy cost is then mathematically blended (weighted average) against the existing energy in the battery to update the `acquisition_cost`. This dynamic acquisition cost is used by the solver's **row-by-row gate** in the sequence builder (see below) to prevent the battery from exporting energy for less than it cost to acquire at each step in the forecast.
 
 ### Persistence Mechanism
 Both `cumulative_cost` and `acquisition_cost` are securely written to Home Assistant's internal `Store` API (`.storage/house_battery_control.cost_data`). The integration utilizes delayed JSON writes to buffer I/O operations, ensuring data survives system reboots and updates without degrading Home Assistant's performance.
@@ -273,7 +273,7 @@ For each 5-minute interval, the solver chooses:
 2. **SoC bounds**: Battery state of charge must stay between `reserve_soc` and 100% at all times.
 3. **Rate limits**: Charge and discharge power cannot exceed `battery_rate_max`.
 4. **Capacity**: Total stored energy cannot exceed `battery_capacity`.
-5. **Efficiency losses**: Charging and discharging have 95% round-trip efficiency baked in.
+5. **Efficiency losses**: Charging and discharging have configurable round-trip efficiency (default 90%, set via `round_trip_efficiency`). The solver uses √(RTE) for each one-way conversion.
 6. **Reserve floor**: SoC must not drop below the configured `reserve_soc` at any interval.
 7. **No-Import Periods**: Grid import is bounded to strictly `0.0 kW` during user-defined textual time spans (e.g. `15:00-21:00`), bypassing arbitrage logic.
 
@@ -297,8 +297,8 @@ HBC addresses this through several mechanisms:
 1. **Re-solve on every entity change**  
    The coordinator listens for state changes on price and other telemetry entities. When Amber revises a forecast, the solver re-runs immediately with the updated prices rather than waiting for the next 5-minute cycle. This means the plan automatically adapts as forecasts firm up closer to real-time.
 
-2. **Acquisition cost floor**  
-   The solver will **not** export energy to the grid if the feed-in price is below the battery's acquisition cost. This prevents the grid-drain scenario where a predicted high feed-in price (e.g. 25c/kWh) collapses at settlement to negative values (e.g. −2c/kWh). The battery values its stored energy at what it cost to charge — if selling isn't profitable, it holds.
+2. **Row-by-row acquisition cost gate**  
+   After solving, the sequence builder evaluates each step's profitability **individually**. At each step `i`, the projected acquisition cost (computed from prior charging/discharging) is compared against the export price. If the export price is below the acquisition cost at that step, the discharge-to-grid decision is overridden to SELF_CONSUMPTION and the battery retains the energy — with full SoC propagation to all subsequent steps. This prevents the grid-drain scenario where a predicted high feed-in price collapses at settlement. The battery values its stored energy at what it cost to charge — if selling isn't profitable at any given step, it holds.
 
 3. **Terminal valuation**  
    Energy remaining in the battery at the end of the 24-hour window is valued at a blended rate between the median buy price and the acquisition cost. This discourages the solver from planning to "run the battery to zero" on speculative future prices.
@@ -348,14 +348,15 @@ The `future_plan` is an array of 288 dictionaries, one per 5-minute interval, re
 
 ```
 Plan Interval {
-    time:         str    # Local time (HH:MM)
-    state:        str    # FSM state for this interval
-    import_price: float  # c/kWh
-    export_price: float  # c/kWh
-    solar_kw:     float  # Forecasted solar (kW)
-    load_kw:      float  # Forecasted load (kW)
-    soc:          float  # Projected SoC at interval end (%)
-    cost:         float  # Projected cost for this interval ($)
+    target_soc:        float  # Projected SoC at interval end (%)
+    state:             str    # FSM state for this interval
+    net_grid:          float  # Net grid power (kW, positive=import)
+    load:              float  # Forecasted load (kW)
+    pv:                float  # Forecasted solar (kW)
+    import_price:      float  # c/kWh
+    export_price:      float  # c/kWh
+    acquisition_cost:  float  # Per-step acquisition cost (c/kWh)
+    cumulative_cost:   float  # Running cumulative cost ($)
 }
 ```
 

@@ -2,7 +2,6 @@
 lin_fsm.py — LP FSM (SciPy HiGHS)
 ===================================
 Implements all system requirements from specs/03-lp-fsm-system/system_requirements.md.
-34 tests across 6 suites verify compliance.
 """
 try:
     from .base import BatteryStateMachine, FSMContext, FSMResult

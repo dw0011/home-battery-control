@@ -66,6 +66,7 @@ The adjustment uses an **excess-based formula**: only the portion of temperature
 | `battery_capacity` | Battery Capacity | `27.0` | Total usable capacity in kWh (2× Powerwall 2 = 27 kWh) |
 | `battery_rate_max` | Max Charge/Discharge Rate | `6.3` | Maximum charge/discharge rate in kW |
 | `inverter_limit` | Inverter Limit | `10.0` | Maximum inverter throughput in kW |
+| `round_trip_efficiency` | Round-Trip Efficiency | `0.90` | Charging/discharging efficiency (0.0–1.0). Solver uses √(RTE) per conversion. |
 | `reserve_soc` | Reserve SoC | `0.0` | Minimum battery SoC (%) the solver will maintain |
 
 ### Pricing & Forecast Sources
