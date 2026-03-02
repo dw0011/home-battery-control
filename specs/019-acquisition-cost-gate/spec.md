@@ -11,7 +11,7 @@ The LP solver currently applies a single static acquisition cost value as a disc
 
 1. **Static gate**: The same acquisition cost is applied uniformly across all 288 steps. In reality, the acquisition cost evolves as the battery charges and discharges through the simulation. A step at hour 4 (after cheap solar charging) should have a different gate value than a step at hour 1 (before any charging).
 
-2. **Default masking**: The 0.10 c/kWh default means the gate is effectively permanently open, since all market export prices exceed 0.10 c/kWh.
+2. **Default masking** (minor, edge case only): The 0.10 c/kWh default is used when no persisted value exists. In practice this is rarely an issue since the persistence path works, but it should still fall back correctly.
 
 ## Core Mechanism
 
