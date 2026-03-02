@@ -224,7 +224,7 @@ class HBCPanel extends LitElement {
             <div class="flow-label">Grid kW</div>
           </div>
           <div class="flow-item battery-item">
-            <div class="flow-icon">🔋</div>
+            <div class="flow-icon">⚡</div>
             <div class="flow-value">${battery}</div>
             <div class="flow-label">Battery kW</div>
           </div>
@@ -234,7 +234,7 @@ class HBCPanel extends LitElement {
             <div class="flow-label">House kW</div>
           </div>
           <div class="flow-item soc-item">
-            <div class="flow-icon">⚡</div>
+            <div class="flow-icon">🔋</div>
             <div class="flow-value">${soc}%</div>
             <div class="flow-label">SoC</div>
           </div>
