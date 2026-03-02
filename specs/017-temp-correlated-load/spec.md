@@ -68,6 +68,8 @@ As the system, I need to associate temperature with each 5-minute load slot in t
 - **FR-009**: Negative delta adjustments (reducing predicted load) MUST be applied without limit. The final predicted load per slot is naturally clamped at 0.0 kW since negative consumption is not physically possible.
 - **FR-010**: Each prediction slot MUST include `temp_delta` (forecast temperature minus historical average temperature for that slot, or `null` if unavailable).
 - **FR-011**: Each prediction slot MUST include `load_adjustment_kw` (the kW adjustment applied due to temperature delta, or `0.0` if no adjustment).
+- **FR-012**: The plan table MUST include a `Temp Δ` column showing the temperature delta per slot (°C), or `—` when unavailable.
+- **FR-013**: The plan table MUST include a `Load Adj.` column showing the load adjustment per slot (kW), hidden by default via the column toggle menu.
 
 ### Configuration
 

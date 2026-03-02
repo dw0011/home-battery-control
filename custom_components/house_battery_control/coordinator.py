@@ -317,6 +317,12 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     "PV Forecast": f"{pv_kw_avg:.2f}",
                     "Load Forecast": f"{load_kw_avg:.2f}",
                     "Air Temp Forecast": f"{temp_c:.1f}°C" if temp_c is not None else "—",
+                    "Temp Delta": f"{load_forecast[idx].get('temp_delta', 0):.1f}°C"
+                    if idx < len(load_forecast) and isinstance(load_forecast[idx], dict) and load_forecast[idx].get("temp_delta") is not None
+                    else "—",
+                    "Load Adj.": f"{load_forecast[idx].get('load_adjustment_kw', 0):.2f}"
+                    if idx < len(load_forecast) and isinstance(load_forecast[idx], dict)
+                    else "0.00",
                     "SoC Forecast": f"{target_soc:.1f}%",
                     "Interval Cost": f"${interval_cost:.4f}",
                     "Cumul. Cost": f"${cumulative:.4f}",

@@ -357,6 +357,8 @@ class HBCPanel extends LitElement {
       "PV",
       "Load",
       "Temp",
+      "Temp Δ",
+      "Load Adj.",
       "SoC",
       "Cost",
       "Cumul. Cost",
@@ -398,6 +400,8 @@ class HBCPanel extends LitElement {
           pv: r["PV Forecast"] || "0.00",
           ld: r["Load Forecast"] || "0.00",
           temp: r["Air Temp Forecast"] || "—",
+          tempDelta: r["Temp Delta"] || "—",
+          loadAdj: r["Load Adj."] || "0.00",
           soc: r["SoC Forecast"] || "—",
           cost: formatCostStr(r["Interval Cost"]),
           cumul: formatCostStr(r["Cumul. Cost"]),
@@ -453,6 +457,10 @@ class HBCPanel extends LitElement {
           const cumul = formatCostStr(lastRow["Cumul. Cost"]);
           const acq = formatCostStr(chunk.reduce((s, row) => s + parseNum(row["Acq. Cost"]), 0) / chunk.length);
 
+          const tempDeltaNum = (chunk.reduce((s, row) => s + parseNum(row["Temp Delta"]), 0) / chunk.length).toFixed(1);
+          const tempDelta = chunk[0]["Temp Delta"] === "—" ? "—" : `${tempDeltaNum}°C`;
+          const loadAdj = (chunk.reduce((s, row) => s + parseNum(row["Load Adj."]), 0) / chunk.length).toFixed(2);
+
           rows.push({
             time,
             localTime,
@@ -464,6 +472,8 @@ class HBCPanel extends LitElement {
             pv,
             ld,
             temp,
+            tempDelta,
+            loadAdj,
             soc,
             cost,
             cumul,
@@ -485,6 +495,8 @@ class HBCPanel extends LitElement {
       "PV": summaryStats.totalPV + " kwh",
       "Load": summaryStats.totalLoad + " kwh",
       "Temp": "",
+      "Temp Δ": "",
+      "Load Adj.": "",
       "SoC": "",
       "Cost": "",
       "Cumul. Cost": "",
@@ -543,6 +555,8 @@ class HBCPanel extends LitElement {
         "PV": r.pv,
         "Load": r.ld,
         "Temp": r.temp,
+        "Temp Δ": r.tempDelta,
+        "Load Adj.": r.loadAdj,
         "SoC": r.soc,
         "Cost": r.cost,
         "Cumul. Cost": r.cumul,
