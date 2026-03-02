@@ -199,6 +199,8 @@ class HBCPanel extends LitElement {
     const load = d.load_power !== undefined ? d.load_power : 0;
     const battery = d.battery_power !== undefined ? d.battery_power : 0;
     const price = d.current_price !== undefined ? d.current_price : 0;
+    const plan = d.plan || [];
+    const export_price = plan.length > 0 ? parseFloat(plan[0]["Export Rate"] || 0) : 0;
     const import_today = d.import_today !== undefined ? d.import_today : 0;
     const export_today = d.export_today !== undefined ? d.export_today : 0;
     const state = d.state || "IDLE";
@@ -231,17 +233,22 @@ class HBCPanel extends LitElement {
             <div class="flow-value">${load}</div>
             <div class="flow-label">House kW</div>
           </div>
+          <div class="flow-item soc-item">
+            <div class="flow-icon">⚡</div>
+            <div class="flow-value">${soc}%</div>
+            <div class="flow-label">SoC</div>
+          </div>
         </div>
       </div>
       <div class="card">
         <div class="status-grid">
           <div class="stat">
-            <div class="stat-value">${soc}%</div>
-            <div class="stat-label">SoC</div>
+            <div class="stat-value">${price}</div>
+            <div class="stat-label">Import c/kWh</div>
           </div>
           <div class="stat">
-            <div class="stat-value">${price}</div>
-            <div class="stat-label">Price c/kWh</div>
+            <div class="stat-value">${export_price}</div>
+            <div class="stat-label">Export c/kWh</div>
           </div>
           <div class="stat">
             <div class="stat-value">${import_today}</div>
