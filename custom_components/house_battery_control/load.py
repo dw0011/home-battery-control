@@ -1,6 +1,8 @@
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, List
+
+import homeassistant.util.dt as dt_util
 
 from homeassistant.core import HomeAssistant
 
@@ -14,6 +16,23 @@ class LoadPredictor:
         self._hass = hass
         self.last_history_raw: list[list[dict]] = []
         self.last_history: list[dict] = []
+        # Daily cache (Feature 020)
+        self._cached_profile: dict | None = None
+        self._cached_temp_data: Any = None
+        self._cache_date: date | None = None
+        self._cached_is_energy: bool = False
+
+    def _cache_is_valid(self) -> bool:
+        """Cache is valid if built for the current effective date.
+
+        Before 00:05 local, effective date = yesterday (cache still valid).
+        After 00:05 local, effective date = today (yesterday's cache is stale).
+        """
+        if self._cached_profile is None or self._cache_date is None:
+            return False
+        now = dt_util.now()
+        effective_date = (now - timedelta(minutes=5)).date()
+        return self._cache_date == effective_date
 
     async def async_predict(
         self,
@@ -52,45 +71,48 @@ class LoadPredictor:
         if not getattr(self, "testing_bypass_history", False):
             self.last_history_raw = []
 
-        # Fetch history via internal API exactly 5 days up to start_time
+        # Fetch history via internal API — 5 complete calendar days (Feature 020: FR-001a)
         if load_entity_id and not getattr(self, "testing_bypass_history", False):
-            from homeassistant.components.recorder import history
+            if self._cache_is_valid():
+                # FR-004: Use cached profile, skip DB
+                historic_states_parsed = self.last_history_raw[0] if self.last_history_raw else []
+                is_energy_sensor = self._cached_is_energy
+            else:
+                from homeassistant.components.recorder import history
 
-            end_date = start_time
-            start_date = end_date - timedelta(days=5)
+                # FR-001a: 5 complete days, no partial today
+                end_date = dt_util.start_of_local_day()  # midnight today
+                start_date = end_date - timedelta(days=5)
 
-            try:
-                states_dict = await self._hass.async_add_executor_job(
-                    history.get_significant_states,
-                    self._hass,
-                    start_date,
-                    end_date,
-                    [load_entity_id],
-                )
-                historic_states_raw = states_dict.get(load_entity_id, [])
-
-                # Format to exact REST API match
-                formatted_states = []
-                for s in historic_states_raw:
-                    formatted_states.append(
-                        {
-                            "entity_id": s.entity_id,  # type: ignore
-                            "state": s.state,  # type: ignore
-                            # Preserve exact isoformat with original timezone (like +00:00)
-                            # We use .replace(microsecond=0) because standard HA REST API
-                            # usually trims microseconds in this endpoint.
-                            "last_changed": s.last_changed.replace(microsecond=0).isoformat(),  # type: ignore
-                            "last_updated": s.last_updated.replace(microsecond=0).isoformat(),  # type: ignore
-                            "attributes": dict(s.attributes),  # type: ignore
-                        }
+                try:
+                    states_dict = await self._hass.async_add_executor_job(
+                        history.get_significant_states,
+                        self._hass,
+                        start_date,
+                        end_date,
+                        [load_entity_id],
                     )
+                    historic_states_raw = states_dict.get(load_entity_id, [])
 
-                # REST API returns a list of lists (one per entity)
-                if formatted_states:
-                    self.last_history_raw = [formatted_states]
+                    # Format to exact REST API match
+                    formatted_states = []
+                    for s in historic_states_raw:
+                        formatted_states.append(
+                            {
+                                "entity_id": s.entity_id,  # type: ignore
+                                "state": s.state,  # type: ignore
+                                "last_changed": s.last_changed.replace(microsecond=0).isoformat(),  # type: ignore
+                                "last_updated": s.last_updated.replace(microsecond=0).isoformat(),  # type: ignore
+                                "attributes": dict(s.attributes),  # type: ignore
+                            }
+                        )
 
-            except Exception as e:
-                _LOGGER.error(f"Error fetching load history via internal API: {e}")
+                    # REST API returns a list of lists (one per entity)
+                    if formatted_states:
+                        self.last_history_raw = [formatted_states]
+
+                except Exception as e:
+                    _LOGGER.error(f"Error fetching load history via internal API: {e}")
 
         # The prediction loop requires the internal list
         historic_states_parsed = self.last_history_raw[0] if self.last_history_raw else []
@@ -102,47 +124,64 @@ class LoadPredictor:
             extract_valid_data,
         )
 
-        valid_data = extract_valid_data(historic_states_parsed)
+        # Feature 020: Skip profile rebuild if cache is valid
+        _use_cache = (not getattr(self, "testing_bypass_history", False)
+                      and self._cache_is_valid()
+                      and self._cached_profile is not None)
 
-        # Fetch temperature history from weather entity (T003)
-        temp_data = None
-        if weather_entity_id and not getattr(self, "testing_bypass_history", False):
-            try:
-                from homeassistant.components.recorder import history as rec_history
+        if _use_cache:
+            historical_profile = self._cached_profile
+            temp_data = self._cached_temp_data
+            is_energy_sensor = self._cached_is_energy
+        else:
+            valid_data = extract_valid_data(historic_states_parsed)
 
-                end_date = start_time
-                start_date = end_date - timedelta(days=5)
+            # Fetch temperature history from weather entity (T003)
+            temp_data = None
+            if weather_entity_id and not getattr(self, "testing_bypass_history", False):
+                try:
+                    from homeassistant.components.recorder import history as rec_history
 
-                temp_states_dict = await self._hass.async_add_executor_job(
-                    rec_history.get_significant_states,
-                    self._hass,
-                    start_date,
-                    end_date,
-                    [weather_entity_id],
-                )
-                temp_states_raw = temp_states_dict.get(weather_entity_id, [])
+                    end_date = dt_util.start_of_local_day()
+                    start_date = end_date - timedelta(days=5)
 
-                formatted_temp_states = []
-                for s in temp_states_raw:
-                    formatted_temp_states.append(
-                        {
-                            "state": s.state,  # type: ignore
-                            "last_changed": s.last_changed.replace(microsecond=0).isoformat(),  # type: ignore
-                            "attributes": dict(s.attributes),  # type: ignore
-                        }
+                    temp_states_dict = await self._hass.async_add_executor_job(
+                        rec_history.get_significant_states,
+                        self._hass,
+                        start_date,
+                        end_date,
+                        [weather_entity_id],
                     )
+                    temp_states_raw = temp_states_dict.get(weather_entity_id, [])
 
-                if formatted_temp_states:
-                    temp_data = extract_temp_data(formatted_temp_states)
+                    formatted_temp_states = []
+                    for s in temp_states_raw:
+                        formatted_temp_states.append(
+                            {
+                                "state": s.state,  # type: ignore
+                                "last_changed": s.last_changed.replace(microsecond=0).isoformat(),  # type: ignore
+                                "attributes": dict(s.attributes),  # type: ignore
+                            }
+                        )
 
-            except Exception as e:
-                _LOGGER.warning(f"Could not fetch temperature history: {e}")
+                    if formatted_temp_states:
+                        temp_data = extract_temp_data(formatted_temp_states)
 
-        # Build Profile with optional temperature data
-        target_tz = start_time.tzinfo if start_time.tzinfo else None
-        historical_profile = build_historical_profile(
-            valid_data, target_tz, is_energy_sensor, temp_data=temp_data
-        )
+                except Exception as e:
+                    _LOGGER.warning(f"Could not fetch temperature history: {e}")
+
+            # Build Profile with optional temperature data
+            target_tz = start_time.tzinfo if start_time.tzinfo else None
+            historical_profile = build_historical_profile(
+                valid_data, target_tz, is_energy_sensor, temp_data=temp_data
+            )
+
+            # Update cache (Feature 020)
+            if not getattr(self, "testing_bypass_history", False):
+                self._cached_profile = historical_profile
+                self._cached_temp_data = temp_data
+                self._cache_date = (dt_util.now() - timedelta(minutes=5)).date()
+                self._cached_is_energy = is_energy_sensor
 
         # Naive lookup for temperature at a given time
         def get_temp_at(target_time: datetime) -> float:

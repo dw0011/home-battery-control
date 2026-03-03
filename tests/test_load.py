@@ -924,3 +924,103 @@ async def test_load_prediction_diagnostic_null_without_temp_history(mock_hass):
     assert prediction[0]["temp_delta"] is None
 
 
+# --- Load History Cache Tests (Feature 020) ---
+
+
+@pytest.mark.asyncio
+async def test_cache_prevents_second_db_call(mock_hass):
+    """FR-004: When cache is valid, async_predict must NOT call get_significant_states."""
+    import datetime as dt
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from homeassistant.core import State
+
+    predictor = LoadPredictor(mock_hass)
+
+    async def mock_add_executor_job(func, *args):
+        return func(*args)
+
+    mock_hass.async_add_executor_job = AsyncMock(side_effect=mock_add_executor_job)
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kW"})
+
+    start = dt.datetime(2025, 2, 20, 12, 0, 0, tzinfo=dt.timezone.utc)
+    base_past = start - dt.timedelta(days=1)
+
+    mock_states = [
+        State("sensor.load", "1.0", last_updated=base_past, last_changed=base_past),
+    ]
+
+    mock_get_states = MagicMock(return_value={"sensor.load": mock_states})
+
+    with patch(
+        "homeassistant.components.recorder.history.get_significant_states",
+        mock_get_states,
+    ), patch(
+        "homeassistant.util.dt.now",
+        return_value=start,
+    ):
+        # First call — should fetch from recorder
+        await predictor.async_predict(
+            start, duration_hours=1, load_entity_id="sensor.load"
+        )
+        first_call_count = mock_get_states.call_count
+
+        # Second call — cache should prevent DB call
+        await predictor.async_predict(
+            start, duration_hours=1, load_entity_id="sensor.load"
+        )
+        second_call_count = mock_get_states.call_count
+
+    assert first_call_count >= 1, "First call should have queried the recorder"
+    assert second_call_count == first_call_count, (
+        f"Cache should prevent second DB call: was {first_call_count}, now {second_call_count}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_cache_expires_after_midnight(mock_hass):
+    """FR-002: Cache must refresh after 00:05 on a new calendar day."""
+    import datetime as dt
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from homeassistant.core import State
+
+    predictor = LoadPredictor(mock_hass)
+
+    async def mock_add_executor_job(func, *args):
+        return func(*args)
+
+    mock_hass.async_add_executor_job = AsyncMock(side_effect=mock_add_executor_job)
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kW"})
+
+    day1_noon = dt.datetime(2025, 2, 20, 12, 0, 0, tzinfo=dt.timezone.utc)
+    day2_morning = dt.datetime(2025, 2, 21, 0, 10, 0, tzinfo=dt.timezone.utc)
+    base_past = day1_noon - dt.timedelta(days=1)
+
+    mock_states = [
+        State("sensor.load", "1.0", last_updated=base_past, last_changed=base_past),
+    ]
+
+    mock_get_states = MagicMock(return_value={"sensor.load": mock_states})
+
+    with patch(
+        "homeassistant.components.recorder.history.get_significant_states",
+        mock_get_states,
+    ):
+        # Day 1 call
+        with patch("homeassistant.util.dt.now", return_value=day1_noon):
+            await predictor.async_predict(
+                day1_noon, duration_hours=1, load_entity_id="sensor.load"
+            )
+        count_after_day1 = mock_get_states.call_count
+
+        # Day 2 call (after 00:05) — cache should be stale
+        with patch("homeassistant.util.dt.now", return_value=day2_morning):
+            await predictor.async_predict(
+                day2_morning, duration_hours=1, load_entity_id="sensor.load"
+            )
+        count_after_day2 = mock_get_states.call_count
+
+    assert count_after_day2 > count_after_day1, (
+        "Cache should have expired after midnight — recorder should be called again"
+    )
