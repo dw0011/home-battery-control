@@ -123,37 +123,36 @@ class LoadPredictor:
         # Fetch temperature history from weather entity (T003)
         temp_data = None
         if weather_entity_id and not getattr(self, "testing_bypass_history", False):
-            if not self._cache_is_valid():
-                try:
-                    from homeassistant.components.recorder import history as rec_history
+            try:
+                from homeassistant.components.recorder import history as rec_history
 
-                    end_date = start_time
-                    start_date = end_date - timedelta(days=5)
+                end_date = start_time
+                start_date = end_date - timedelta(days=5)
 
-                    temp_states_dict = await self._hass.async_add_executor_job(
-                        rec_history.get_significant_states,
-                        self._hass,
-                        start_date,
-                        end_date,
-                        [weather_entity_id],
+                temp_states_dict = await self._hass.async_add_executor_job(
+                    rec_history.get_significant_states,
+                    self._hass,
+                    start_date,
+                    end_date,
+                    [weather_entity_id],
+                )
+                temp_states_raw = temp_states_dict.get(weather_entity_id, [])
+
+                formatted_temp_states = []
+                for s in temp_states_raw:
+                    formatted_temp_states.append(
+                        {
+                            "state": s.state,  # type: ignore
+                            "last_changed": s.last_changed.replace(microsecond=0).isoformat(),  # type: ignore
+                            "attributes": dict(s.attributes),  # type: ignore
+                        }
                     )
-                    temp_states_raw = temp_states_dict.get(weather_entity_id, [])
 
-                    formatted_temp_states = []
-                    for s in temp_states_raw:
-                        formatted_temp_states.append(
-                            {
-                                "state": s.state,  # type: ignore
-                                "last_changed": s.last_changed.replace(microsecond=0).isoformat(),  # type: ignore
-                                "attributes": dict(s.attributes),  # type: ignore
-                            }
-                        )
+                if formatted_temp_states:
+                    temp_data = extract_temp_data(formatted_temp_states)
 
-                    if formatted_temp_states:
-                        temp_data = extract_temp_data(formatted_temp_states)
-
-                except Exception as e:
-                    _LOGGER.warning(f"Could not fetch temperature history: {e}")
+            except Exception as e:
+                _LOGGER.warning(f"Could not fetch temperature history: {e}")
 
         # Build Profile with optional temperature data
         target_tz = start_time.tzinfo if start_time.tzinfo else None
