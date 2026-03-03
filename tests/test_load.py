@@ -929,7 +929,7 @@ async def test_load_prediction_diagnostic_null_without_temp_history(mock_hass):
 
 @pytest.mark.asyncio
 async def test_cache_prevents_second_db_call(mock_hass):
-    """FR-004: When cache is valid, async_predict must NOT call get_significant_states."""
+    """TR-002: Two consecutive calls with same time — second must NOT invoke get_significant_states."""
     import datetime as dt
     from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -960,13 +960,13 @@ async def test_cache_prevents_second_db_call(mock_hass):
         return_value=start,
     ):
         # First call — should fetch from recorder
-        await predictor.async_predict(
+        result1 = await predictor.async_predict(
             start, duration_hours=1, load_entity_id="sensor.load"
         )
         first_call_count = mock_get_states.call_count
 
         # Second call — cache should prevent DB call
-        await predictor.async_predict(
+        result2 = await predictor.async_predict(
             start, duration_hours=1, load_entity_id="sensor.load"
         )
         second_call_count = mock_get_states.call_count
@@ -979,7 +979,7 @@ async def test_cache_prevents_second_db_call(mock_hass):
 
 @pytest.mark.asyncio
 async def test_cache_expires_after_midnight(mock_hass):
-    """FR-002: Cache must refresh after 00:05 on a new calendar day."""
+    """TR-003: Call at day1 noon then day2 00:10 — second call MUST invoke get_significant_states."""
     import datetime as dt
     from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1024,3 +1024,64 @@ async def test_cache_expires_after_midnight(mock_hass):
     assert count_after_day2 > count_after_day1, (
         "Cache should have expired after midnight — recorder should be called again"
     )
+
+
+@pytest.mark.asyncio
+async def test_cached_output_matches_fresh_output(mock_hass):
+    """TR-004: Cached prediction must be identical to the first (fresh) prediction."""
+    import datetime as dt
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from homeassistant.core import State
+
+    predictor = LoadPredictor(mock_hass)
+
+    async def mock_add_executor_job(func, *args):
+        return func(*args)
+
+    mock_hass.async_add_executor_job = AsyncMock(side_effect=mock_add_executor_job)
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kWh"})
+
+    start = dt.datetime(2025, 2, 20, 12, 0, 0, tzinfo=dt.timezone.utc)
+    base_past = start - dt.timedelta(days=1)
+
+    # Provide realistic history so the profile isn't just fallback
+    mock_states = [
+        State("sensor.energy", "10.0", last_updated=base_past, last_changed=base_past),
+        State(
+            "sensor.energy",
+            "10.1",
+            last_updated=base_past + dt.timedelta(minutes=5),
+            last_changed=base_past + dt.timedelta(minutes=5),
+        ),
+        State(
+            "sensor.energy",
+            "10.3",
+            last_updated=base_past + dt.timedelta(minutes=10),
+            last_changed=base_past + dt.timedelta(minutes=10),
+        ),
+    ]
+
+    mock_get_states = MagicMock(return_value={"sensor.energy": mock_states})
+
+    with patch(
+        "homeassistant.components.recorder.history.get_significant_states",
+        mock_get_states,
+    ), patch(
+        "homeassistant.util.dt.now",
+        return_value=start,
+    ):
+        # Fresh fetch
+        result_fresh = await predictor.async_predict(
+            start, duration_hours=1, load_entity_id="sensor.energy"
+        )
+        # Cached fetch
+        result_cached = await predictor.async_predict(
+            start, duration_hours=1, load_entity_id="sensor.energy"
+        )
+
+    # Element-by-element comparison
+    assert len(result_fresh) == len(result_cached), "Lengths differ"
+    for i, (fresh, cached) in enumerate(zip(result_fresh, result_cached)):
+        assert fresh == cached, f"Mismatch at index {i}: fresh={fresh}, cached={cached}"
+
