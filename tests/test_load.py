@@ -1085,3 +1085,50 @@ async def test_cached_output_matches_fresh_output(mock_hass):
     for i, (fresh, cached) in enumerate(zip(result_fresh, result_cached)):
         assert fresh == cached, f"Mismatch at index {i}: fresh={fresh}, cached={cached}"
 
+
+@pytest.mark.asyncio
+async def test_cache_metadata_exposed(mock_hass):
+    """SC-004: cache_date and cache_refreshed_at are None before first call, populated after."""
+    import datetime as dt
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from homeassistant.core import State
+
+    predictor = LoadPredictor(mock_hass)
+
+    # Before first call — both should be None
+    assert predictor.cache_date is None
+    assert predictor.cache_refreshed_at is None
+
+    async def mock_add_executor_job(func, *args):
+        return func(*args)
+
+    mock_hass.async_add_executor_job = AsyncMock(side_effect=mock_add_executor_job)
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kW"})
+
+    start = dt.datetime(2025, 2, 20, 12, 0, 0, tzinfo=dt.timezone.utc)
+    base_past = start - dt.timedelta(days=1)
+
+    mock_states = [
+        State("sensor.load", "1.0", last_updated=base_past, last_changed=base_past),
+    ]
+
+    mock_get_states = MagicMock(return_value={"sensor.load": mock_states})
+
+    with patch(
+        "homeassistant.components.recorder.history.get_significant_states",
+        mock_get_states,
+    ), patch(
+        "homeassistant.util.dt.now",
+        return_value=start,
+    ):
+        await predictor.async_predict(
+            start, duration_hours=1, load_entity_id="sensor.load"
+        )
+
+    # After first call — both should be populated
+    assert predictor.cache_date is not None, "cache_date should be set after first call"
+    assert predictor.cache_refreshed_at is not None, "cache_refreshed_at should be set after first call"
+    assert isinstance(predictor.cache_date, dt.date)
+    assert isinstance(predictor.cache_refreshed_at, dt.datetime)
+

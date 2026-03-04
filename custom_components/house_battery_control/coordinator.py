@@ -577,6 +577,9 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 "last_update": dt_util.utcnow().isoformat(),
                 "update_count": self._update_count,
                 "load_history": getattr(self.load_predictor, "last_history", []),
+                # Feature 022: cache observability
+                "load_cache_date": str(self.load_predictor.cache_date) if self.load_predictor.cache_date else None,
+                "load_cache_refreshed_at": self.load_predictor.cache_refreshed_at.isoformat() if self.load_predictor.cache_refreshed_at else None,
             }
         except Exception as err:
             raise UpdateFailed(f"Error in HBC update cycle: {err}")

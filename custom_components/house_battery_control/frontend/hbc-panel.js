@@ -125,6 +125,17 @@ class HBCPanel extends LitElement {
     this._planResolution = res;
   }
 
+  // Feature 022: cache observability
+  _renderCacheStatus() {
+    if (!this._data) return "";
+    const cacheDate = this._data.load_cache_date;
+    const refreshedAt = this._data.load_cache_refreshed_at;
+    if (!cacheDate || !refreshedAt) return "Load history: fetching\u2026";
+    const t = new Date(refreshedAt);
+    const timeStr = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return `Load history cached: ${cacheDate} (refreshed ${timeStr})`;
+  }
+
   _toggleCol(col) {
     let hidden = [...this._hiddenCols];
     if (hidden.includes(col)) {
@@ -514,6 +525,7 @@ class HBCPanel extends LitElement {
       <div class="card table-card">
         <div class="header" style="margin-bottom: 12px;">
           <h2 style="margin-bottom: 0;">24-Hour Plan <span style="font-size: 0.55em; font-weight: normal; opacity: 0.5; margin-left: 12px;">Updated: ${this._formatLastUpdate()}</span></h2>
+          <div style="font-size: 0.75em; opacity: 0.5; margin-top: 2px;">${this._renderCacheStatus()}</div>
           <div class="tabs">
             <button
               class="${this._planResolution === "5min" ? "active" : ""}"

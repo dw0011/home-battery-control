@@ -19,6 +19,18 @@ class LoadPredictor:
         # Feature 020: prediction cache (24hr TTL, refresh after 00:05)
         self._cache_date: date | None = None
         self._cache_history_done: bool = False
+        self._cache_refreshed_at: datetime | None = None
+
+    # Feature 022: expose cache metadata
+    @property
+    def cache_date(self) -> date | None:
+        """Effective date the cached load history covers."""
+        return self._cache_date
+
+    @property
+    def cache_refreshed_at(self) -> datetime | None:
+        """Timestamp of the last load history DB fetch."""
+        return self._cache_refreshed_at
 
     def _cache_is_valid(self) -> bool:
         """Cache is valid if built for the current effective date.
@@ -250,5 +262,6 @@ class LoadPredictor:
         if not getattr(self, "testing_bypass_history", False) and not self._cache_is_valid():
             self._cache_history_done = True
             self._cache_date = (dt_util.now() - timedelta(minutes=5)).date()
+            self._cache_refreshed_at = dt_util.now()
 
         return prediction
