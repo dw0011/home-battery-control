@@ -40,6 +40,7 @@ from .const import (
     CONF_INVERTER_LIMIT_MAX,
     CONF_LOAD_HIGH_TEMP_THRESHOLD,
     CONF_LOAD_LOW_TEMP_THRESHOLD,
+    CONF_LOAD_CACHE_TTL,
     CONF_LOAD_POWER_ENTITY,
     CONF_LOAD_SENSITIVITY_HIGH_TEMP,
     CONF_LOAD_SENSITIVITY_LOW_TEMP,
@@ -59,6 +60,7 @@ from .const import (
     DEFAULT_BATTERY_CAPACITY,
     DEFAULT_BATTERY_RATE_MAX,
     DEFAULT_INVERTER_LIMIT,
+    DEFAULT_LOAD_CACHE_TTL,
     DEFAULT_PANEL_ADMIN_ONLY,
     DEFAULT_RESERVE_SOC,
     DEFAULT_SOLCAST_TODAY,
@@ -180,6 +182,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     ),
                     vol.Required(CONF_LOAD_LOW_TEMP_THRESHOLD, default=15.0): NumberSelector(
                         NumberSelectorConfig(min=0, max=25, step=0.5, mode=NumberSelectorMode.BOX)
+                    ),
+                    vol.Required(CONF_LOAD_CACHE_TTL, default=DEFAULT_LOAD_CACHE_TTL): NumberSelector(
+                        NumberSelectorConfig(min=5, max=1440, step=5, mode=NumberSelectorMode.BOX, unit_of_measurement="min")
                     ),
                     vol.Required(
                         CONF_BATTERY_CAPACITY, default=DEFAULT_BATTERY_CAPACITY
@@ -373,6 +378,12 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
                         default=self._data.get(CONF_LOAD_LOW_TEMP_THRESHOLD, 15.0),
                     ): NumberSelector(
                         NumberSelectorConfig(min=0, max=25, step=0.5, mode=NumberSelectorMode.BOX)
+                    ),
+                    vol.Required(
+                        CONF_LOAD_CACHE_TTL,
+                        default=self._data.get(CONF_LOAD_CACHE_TTL, DEFAULT_LOAD_CACHE_TTL),
+                    ): NumberSelector(
+                        NumberSelectorConfig(min=5, max=1440, step=5, mode=NumberSelectorMode.BOX, unit_of_measurement="min")
                     ),
                     vol.Required(
                         CONF_BATTERY_CAPACITY,

@@ -26,6 +26,7 @@ CONF_LOAD_SENSITIVITY_HIGH_TEMP = "load_high_temp_sensitivity"  # kW per deg abo
 CONF_LOAD_SENSITIVITY_LOW_TEMP = "load_low_temp_sensitivity"  # kW per deg below threshold
 CONF_LOAD_HIGH_TEMP_THRESHOLD = "load_high_temp_threshold"  # e.g. 25C
 CONF_LOAD_LOW_TEMP_THRESHOLD = "load_low_temp_threshold"  # e.g. 15C
+CONF_LOAD_CACHE_TTL = "load_cache_ttl_minutes"  # Cache refresh interval in minutes
 
 # Calibration
 CONF_BATTERY_CAPACITY = "battery_capacity"
@@ -61,6 +62,7 @@ DEFAULT_PANEL_ADMIN_ONLY = True
 DEFAULT_CURRENCY = "c/kWh"
 DEFAULT_SCAN_INTERVAL = 300
 # 5 minutes
+DEFAULT_LOAD_CACHE_TTL = 360  # 6 hours in minutes
 DEFAULT_SOLCAST_TODAY = "sensor.solcast_pv_forecast_today"
 DEFAULT_SOLCAST_TOMORROW = "sensor.solcast_pv_forecast_tomorrow"
 

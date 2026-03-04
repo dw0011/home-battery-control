@@ -44,7 +44,7 @@ class LoadPredictor:
         """End of the cached history date range."""
         return self._history_end
 
-    CACHE_TTL_MINUTES = 10  # Refresh cache every 10 minutes
+    CACHE_TTL_MINUTES = 360  # Default 6 hours; overridden from config via coordinator
 
     def _cache_is_valid(self) -> bool:
         """Cache is valid if refreshed within TTL."""

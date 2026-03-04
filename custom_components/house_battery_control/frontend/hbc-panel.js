@@ -132,12 +132,15 @@ class HBCPanel extends LitElement {
     const refreshedAt = this._data.load_cache_refreshed_at;
     const histStart = this._data.load_history_start;
     const histEnd = this._data.load_history_end;
+    const ttlMin = this._data.load_cache_ttl_minutes;
     if (!cacheDate || !refreshedAt) return "Load history: fetching\u2026";
     const t = new Date(refreshedAt);
     const timeStr = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     const startDate = histStart ? new Date(histStart).toLocaleDateString() : "?";
     const endDate = histEnd ? new Date(histEnd).toLocaleDateString() : "?";
-    return `Load cache: ${startDate} \u2192 ${endDate} (refreshed ${timeStr})`;
+    const expiry = new Date(t.getTime() + (ttlMin || 360) * 60000);
+    const expiryStr = expiry.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return `Load cache: ${startDate} \u2192 ${endDate} (refreshed ${timeStr}, expires ${expiryStr})`;
   }
 
   _toggleCol(col) {
