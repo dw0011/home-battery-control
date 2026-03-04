@@ -979,7 +979,7 @@ async def test_cache_prevents_second_db_call(mock_hass):
 
 @pytest.mark.asyncio
 async def test_cache_expires_after_midnight(mock_hass):
-    """TR-003: Call at day1 noon then day2 00:10 — second call MUST invoke get_significant_states."""
+    """TR-003: Call at time1, then 11+ minutes later — second call MUST invoke get_significant_states."""
     import datetime as dt
     from unittest.mock import AsyncMock, MagicMock, patch
 

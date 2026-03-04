@@ -580,6 +580,8 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 # Feature 022: cache observability
                 "load_cache_date": str(self.load_predictor.cache_date) if self.load_predictor.cache_date else None,
                 "load_cache_refreshed_at": self.load_predictor.cache_refreshed_at.isoformat() if self.load_predictor.cache_refreshed_at else None,
+                "load_history_start": self.load_predictor.history_start.isoformat() if self.load_predictor.history_start else None,
+                "load_history_end": self.load_predictor.history_end.isoformat() if self.load_predictor.history_end else None,
             }
         except Exception as err:
             raise UpdateFailed(f"Error in HBC update cycle: {err}")
