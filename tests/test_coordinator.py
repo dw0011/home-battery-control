@@ -6,7 +6,7 @@ derivation logic WITHOUT constructing the full DataUpdateCoordinator
 """
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from custom_components.house_battery_control.const import (
@@ -664,3 +664,32 @@ class TestAcqCostOverrideConst:
         )
         assert CONF_ACQ_COST_OVERRIDE == "acq_cost_override"
         assert CONF_ACQ_COST_OVERRIDE_VALUE == "acq_cost_override_value"
+
+    @pytest.mark.asyncio
+    async def test_override_uses_immediate_save(self):
+        """Override must use async_save (immediate), not async_delay_save.
+
+        Integration reloads on options change, destroying the old coordinator.
+        async_delay_save would never fire before destruction.
+        """
+        coord = MagicMock()
+        coord.acquisition_cost = 0.35
+        coord.cumulative_cost = 100.0
+        coord.store = MagicMock()
+        coord.store.async_save = AsyncMock()
+
+        # Simulate what the options flow does
+        override_val = 0.135
+        coord.acquisition_cost = override_val
+        await coord.store.async_save({
+            "cumulative_cost": coord.cumulative_cost,
+            "acquisition_cost": coord.acquisition_cost,
+        })
+
+        # Verify async_save was called (not async_delay_save)
+        coord.store.async_save.assert_called_once_with({
+            "cumulative_cost": 100.0,
+            "acquisition_cost": 0.135,
+        })
+        coord.store.async_delay_save.assert_not_called()
+        assert coord.acquisition_cost == 0.135

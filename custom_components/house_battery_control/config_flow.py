@@ -352,13 +352,12 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
                             coord.acquisition_cost, override_val,
                         )
                         coord.acquisition_cost = override_val
-                        coord.store.async_delay_save(
-                            lambda: {
-                                "cumulative_cost": coord.cumulative_cost,
-                                "acquisition_cost": coord.acquisition_cost,
-                            },
-                            60,
-                        )
+                        # Save immediately — integration reloads on options change,
+                        # so async_delay_save would never fire before destruction
+                        await coord.store.async_save({
+                            "cumulative_cost": coord.cumulative_cost,
+                            "acquisition_cost": coord.acquisition_cost,
+                        })
                         break
                 # Clear the flag so it doesn't fire again on restart
                 user_input[CONF_ACQ_COST_OVERRIDE] = False
