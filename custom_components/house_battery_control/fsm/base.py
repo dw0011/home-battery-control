@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
+
 @dataclass
 class SolverInputs:
     """Pre-built solver input arrays prepared by the coordinator."""

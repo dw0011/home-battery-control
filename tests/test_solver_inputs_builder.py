@@ -4,11 +4,10 @@ These tests are written BEFORE the implementation (TDD red phase).
 They will fail until _build_solver_inputs() is implemented in coordinator.py.
 """
 
-from datetime import datetime, time, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 #  Helpers
@@ -346,7 +345,7 @@ class TestBuildNoImportMidnightWrap:
 
         assert result.no_import_steps is not None
         assert len(result.no_import_steps) > 0
-        # Step 0 = 20:00 UTC, should NOT be blocked  
+        # Step 0 = 20:00 UTC, should NOT be blocked
         assert 0 not in result.no_import_steps
         # Step 24 = 20:00 + 2h = 22:00 UTC, SHOULD be blocked
         assert 24 in result.no_import_steps

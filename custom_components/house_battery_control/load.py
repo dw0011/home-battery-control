@@ -3,7 +3,6 @@ from datetime import date, datetime, timedelta
 from typing import Any, List
 
 import homeassistant.util.dt as dt_util
-
 from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
