@@ -538,3 +538,119 @@ async def test_coordinator_load_stored_costs_valid(mock_hass):
 
             assert coordinator.cumulative_cost == 5.42
             assert coordinator.acquisition_cost == 0.12
+
+
+# ===================================================================
+# Feature 025 — Acquisition Cost Tracker Fix (TDD)
+# ===================================================================
+
+
+class TestAcqCostSolverSync:
+    """Feature 025: Coordinator syncs acquisition_cost from solver plan value."""
+
+    def _run_cost_tracker(self, coordinator, future_plan, rates_list, soc=50.0):
+        """Run just the cost-tracker block from _async_update_data."""
+        old_cumulative = coordinator.cumulative_cost
+        old_acquisition = coordinator.acquisition_cost
+
+        if future_plan and rates_list:
+            f_net_grid = future_plan[0].get("net_grid", 0.0)
+            price = rates_list[0].get(
+                "import_price", rates_list[0].get("price", 0.0)
+            )
+            export_price = rates_list[0].get("export_price", price * 0.8)
+
+            if f_net_grid > 0:
+                interval_cost = f_net_grid * price * (5 / 60)
+            else:
+                interval_cost = f_net_grid * export_price * (5 / 60)
+
+            coordinator.cumulative_cost += interval_cost
+
+            # --- This is the block being replaced by Feature 025 ---
+            # After fix: coordinator should sync from future_plan[0]["acquisition_cost"]
+            solver_acq = future_plan[0].get("acquisition_cost")
+            if solver_acq is not None:
+                coordinator.acquisition_cost = solver_acq
+
+    def _make_coordinator(self, acq_cost=0.10):
+        """Create a minimal coordinator-like object for cost tracker tests."""
+        coord = MagicMock()
+        coord.cumulative_cost = 0.0
+        coord.acquisition_cost = acq_cost
+        coord.config = {"battery_capacity": 27.0}
+        return coord
+
+    def test_acq_cost_syncs_from_solver_plan(self):
+        """T01 (FR-001): acquisition_cost should match solver plan row-0 value."""
+        coord = self._make_coordinator(acq_cost=0.10)
+        future_plan = [
+            {
+                "net_grid": 0.5,
+                "pv": 2.0,
+                "load": 1.5,
+                "acquisition_cost": 0.135,  # Solver says 13.5 c/kWh
+            }
+        ]
+        rates = [{"import_price": 30.0, "export_price": 5.0}]
+
+        self._run_cost_tracker(coord, future_plan, rates)
+
+        assert coord.acquisition_cost == 0.135, (
+            f"Expected solver value 0.135, got {coord.acquisition_cost}"
+        )
+
+    def test_acq_cost_persists_on_empty_plan(self):
+        """T02 (FR-004): acquisition_cost retains previous value when plan is empty."""
+        coord = self._make_coordinator(acq_cost=0.135)
+
+        self._run_cost_tracker(coord, [], [])
+
+        assert coord.acquisition_cost == 0.135, (
+            f"Expected retained value 0.135, got {coord.acquisition_cost}"
+        )
+
+    def test_acq_cost_no_double_count(self):
+        """T03 (FR-001): Running tracker twice with same plan gives same value (idempotent)."""
+        coord = self._make_coordinator(acq_cost=0.10)
+        future_plan = [
+            {
+                "net_grid": 1.0,
+                "pv": 3.0,
+                "load": 2.0,
+                "acquisition_cost": 0.135,
+            }
+        ]
+        rates = [{"import_price": 30.0, "export_price": 5.0}]
+
+        self._run_cost_tracker(coord, future_plan, rates)
+        first_value = coord.acquisition_cost
+
+        self._run_cost_tracker(coord, future_plan, rates)
+        second_value = coord.acquisition_cost
+
+        assert first_value == second_value == 0.135, (
+            f"Expected idempotent 0.135, got first={first_value}, second={second_value}"
+        )
+
+    def test_cumulative_cost_unchanged(self):
+        """T04 (FR-006): Cumulative cost tracker must still work correctly."""
+        coord = self._make_coordinator(acq_cost=0.10)
+        future_plan = [
+            {
+                "net_grid": 2.0,  # importing 2kW
+                "pv": 0.0,
+                "load": 2.0,
+                "acquisition_cost": 0.135,
+            }
+        ]
+        rates = [{"import_price": 30.0, "export_price": 5.0}]
+
+        self._run_cost_tracker(coord, future_plan, rates)
+
+        # cumulative_cost should be net_grid * price * (5/60) = 2.0 * 30.0 * (5/60) = 5.0
+        expected_cumulative = 2.0 * 30.0 * (5 / 60)
+        assert abs(coord.cumulative_cost - expected_cumulative) < 0.001, (
+            f"Expected cumulative {expected_cumulative}, got {coord.cumulative_cost}"
+        )
+

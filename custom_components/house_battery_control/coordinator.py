@@ -609,29 +609,10 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
 
                 self.cumulative_cost += interval_cost
 
-                # Update Acquisition Cost (Weighted Average)
-                actual_pv = future_plan[0].get("pv", 0.0)
-                actual_load = future_plan[0].get("load", 0.0)
-
-                # Power entering battery (positive = charging)
-                battery_kw = actual_pv + f_net_grid - actual_load
-
-                if battery_kw > 0.01:
-                    # We are charging
-                    energy_added_kwh = battery_kw * (5 / 60)
-
-                    pv_to_batt = min(actual_pv, battery_kw)
-                    grid_to_batt = max(0, battery_kw - actual_pv)
-
-                    cost_of_charge = (pv_to_batt * export_price + grid_to_batt * price) * (5 / 60)
-
-                    current_energy_kwh = (soc / 100.0) * self.config.get(CONF_BATTERY_CAPACITY, 27.0)
-                    current_value = current_energy_kwh * self.acquisition_cost
-
-                    new_total_energy = current_energy_kwh + energy_added_kwh
-
-                    if new_total_energy > 0:
-                        self.acquisition_cost = (current_value + cost_of_charge) / new_total_energy
+                # Sync acquisition cost from solver plan (Feature 025, FR-001)
+                solver_acq = future_plan[0].get("acquisition_cost")
+                if solver_acq is not None:
+                    self.acquisition_cost = solver_acq
 
             # Save to persistent storage if values drifted during this tick
             if abs(self.cumulative_cost - old_cumulative) > 0.0001 or abs(self.acquisition_cost - old_acquisition) > 0.0001:
