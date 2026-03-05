@@ -340,6 +340,29 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_energy(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Update Energy & Metrics (Cumulative)."""
         if user_input is not None:
+            # Apply one-shot acquisition cost override immediately (no restart)
+            if user_input.get(CONF_ACQ_COST_OVERRIDE, False):
+                override_val = user_input.get(CONF_ACQ_COST_OVERRIDE_VALUE, 0.135)
+                domain_data = self.hass.data.get(DOMAIN, {})
+                for entry_data in domain_data.values():
+                    coord = entry_data.get("coordinator") if isinstance(entry_data, dict) else None
+                    if coord and hasattr(coord, "acquisition_cost"):
+                        _LOGGER.info(
+                            "Applying acquisition cost override: %s -> %s",
+                            coord.acquisition_cost, override_val,
+                        )
+                        coord.acquisition_cost = override_val
+                        coord.store.async_delay_save(
+                            lambda: {
+                                "cumulative_cost": coord.cumulative_cost,
+                                "acquisition_cost": coord.acquisition_cost,
+                            },
+                            60,
+                        )
+                        break
+                # Clear the flag so it doesn't fire again on restart
+                user_input[CONF_ACQ_COST_OVERRIDE] = False
+
             self._data.update(user_input)
             self.hass.config_entries.async_update_entry(self.config_entry, data=self._data)
             return self.async_create_entry(title="", data={})
