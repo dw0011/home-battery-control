@@ -33,7 +33,9 @@
                     "current_export_price_entity": "Current Export Price Entity (e.g. Amber Feed-in Price)",
                     "weather_entity": "Weather Entity",
                     "solcast_today_entity": "Solcast Forecast Today (sensor)",
-                    "solcast_tomorrow_entity": "Solcast Forecast Tomorrow (sensor)"
+                    "solcast_tomorrow_entity": "Solcast Forecast Tomorrow (sensor)",
+                    "acq_cost_override": "Override Acquisition Cost (one-shot)",
+                    "acq_cost_override_value": "Acquisition Cost Override Value ($/kWh)"
                 }
             },
             "control": {
@@ -95,7 +97,9 @@
                     "current_export_price_entity": "Current Export Price Entity (e.g. Amber Feed-in Price)",
                     "weather_entity": "Weather Entity",
                     "solcast_today_entity": "Solcast Forecast Today (sensor)",
-                    "solcast_tomorrow_entity": "Solcast Forecast Tomorrow (sensor)"
+                    "solcast_tomorrow_entity": "Solcast Forecast Tomorrow (sensor)",
+                    "acq_cost_override": "Override Acquisition Cost (one-shot)",
+                    "acq_cost_override_value": "Acquisition Cost Override Value ($/kWh)"
                 }
             },
             "control": {

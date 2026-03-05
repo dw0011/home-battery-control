@@ -652,3 +652,15 @@ class TestAcqCostSolverSync:
             f"Expected cumulative {expected_cumulative}, got {coord.cumulative_cost}"
         )
 
+
+class TestAcqCostOverrideConst:
+    """Verify acquisition cost override constants exist in const.py."""
+
+    def test_override_constants_exist(self):
+        """CONF_ACQ_COST_OVERRIDE and CONF_ACQ_COST_OVERRIDE_VALUE must exist."""
+        from custom_components.house_battery_control.const import (
+            CONF_ACQ_COST_OVERRIDE,
+            CONF_ACQ_COST_OVERRIDE_VALUE,
+        )
+        assert CONF_ACQ_COST_OVERRIDE == "acq_cost_override"
+        assert CONF_ACQ_COST_OVERRIDE_VALUE == "acq_cost_override_value"

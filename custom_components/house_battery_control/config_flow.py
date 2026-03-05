@@ -22,6 +22,8 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    CONF_ACQ_COST_OVERRIDE,
+    CONF_ACQ_COST_OVERRIDE_VALUE,
     CONF_ALLOW_CHARGE_FROM_GRID_ENTITY,
     CONF_ALLOW_EXPORT_ENTITY,
     CONF_BATTERY_CAPACITY,
@@ -427,6 +429,16 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
                             CONF_SOLCAST_TOMORROW_ENTITY, DEFAULT_SOLCAST_TOMORROW
                         ),
                     ): EntitySelector(EntitySelectorConfig(domain="sensor")),
+                    vol.Optional(
+                        CONF_ACQ_COST_OVERRIDE,
+                        default=self._data.get(CONF_ACQ_COST_OVERRIDE, False),
+                    ): BooleanSelector(),
+                    vol.Optional(
+                        CONF_ACQ_COST_OVERRIDE_VALUE,
+                        default=self._data.get(CONF_ACQ_COST_OVERRIDE_VALUE, 0.135),
+                    ): NumberSelector(
+                        NumberSelectorConfig(min=0, max=1, step=0.001, mode=NumberSelectorMode.BOX)
+                    ),
                 }
             ),
         )

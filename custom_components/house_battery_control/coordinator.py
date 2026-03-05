@@ -136,6 +136,31 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
         else:
             self.cumulative_cost = 0.0
             self.acquisition_cost = 0.10
+
+        # One-shot acquisition cost override from config options
+        from .const import CONF_ACQ_COST_OVERRIDE, CONF_ACQ_COST_OVERRIDE_VALUE
+        if self.config.get(CONF_ACQ_COST_OVERRIDE, False):
+            override_val = self.config.get(CONF_ACQ_COST_OVERRIDE_VALUE, 0.135)
+            _LOGGER.info(
+                "Applying one-shot acquisition cost override: %s -> %s",
+                self.acquisition_cost, override_val,
+            )
+            self.acquisition_cost = override_val
+            # Persist immediately
+            self.store.async_delay_save(
+                lambda: {
+                    "cumulative_cost": self.cumulative_cost,
+                    "acquisition_cost": self.acquisition_cost,
+                },
+                60,
+            )
+            # Clear the flag so it doesn't fire again
+            new_data = dict(self.config_entry.data)
+            new_data[CONF_ACQ_COST_OVERRIDE] = False
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, data=new_data
+            )
+
         _LOGGER.debug("Loaded HBC costs: Cumulative=$%s, Acquisition=%s c/kWh", self.cumulative_cost, self.acquisition_cost)
 
     async def _async_on_state_change(self, event) -> None:

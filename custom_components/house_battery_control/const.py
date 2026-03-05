@@ -46,6 +46,10 @@ CONF_SCRIPT_DISCHARGE_STOP = "script_discharge_stop"
 # Observation Mode
 CONF_OBSERVATION_MODE = "observation_mode"
 
+# Acquisition Cost Override (one-shot)
+CONF_ACQ_COST_OVERRIDE = "acq_cost_override"
+CONF_ACQ_COST_OVERRIDE_VALUE = "acq_cost_override_value"
+
 # No-Import Periods (demand charge windows)
 CONF_NO_IMPORT_PERIODS = "no_import_periods"
 
