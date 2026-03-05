@@ -15,21 +15,42 @@ class LoadPredictor:
         self._hass = hass
         self.last_history_raw: list[list[dict]] = []
         self.last_history: list[dict] = []
-        # Feature 020: prediction cache (24hr TTL, refresh after 00:05)
+        # Feature 020: load history cache
         self._cache_date: date | None = None
         self._cache_history_done: bool = False
+        self._cache_refreshed_at: datetime | None = None
+        self._history_start: datetime | None = None
+        self._history_end: datetime | None = None
+
+    # Feature 022: expose cache metadata
+    @property
+    def cache_date(self) -> date | None:
+        """Effective date the cached load history covers."""
+        return self._cache_date
+
+    @property
+    def cache_refreshed_at(self) -> datetime | None:
+        """Timestamp of the last load history DB fetch."""
+        return self._cache_refreshed_at
+
+    @property
+    def history_start(self) -> datetime | None:
+        """Start of the cached history date range."""
+        return self._history_start
+
+    @property
+    def history_end(self) -> datetime | None:
+        """End of the cached history date range."""
+        return self._history_end
+
+    CACHE_TTL_MINUTES = 360  # Default 6 hours; overridden from config via coordinator
 
     def _cache_is_valid(self) -> bool:
-        """Cache is valid if built for the current effective date.
-
-        Before 00:05 local, effective date = yesterday (cache still valid).
-        After 00:05 local, effective date = today (yesterday's cache is stale).
-        """
-        if self._cache_date is None or not self._cache_history_done:
+        """Cache is valid if refreshed within TTL."""
+        if self._cache_refreshed_at is None or not self._cache_history_done:
             return False
-        now = dt_util.now()
-        effective_date = (now - timedelta(minutes=5)).date()
-        return self._cache_date == effective_date
+        age = dt_util.now() - self._cache_refreshed_at
+        return age < timedelta(minutes=self.CACHE_TTL_MINUTES)
 
     async def async_predict(
         self,
@@ -249,5 +270,8 @@ class LoadPredictor:
         if not getattr(self, "testing_bypass_history", False) and not self._cache_is_valid():
             self._cache_history_done = True
             self._cache_date = (dt_util.now() - timedelta(minutes=5)).date()
+            self._cache_refreshed_at = dt_util.now()
+            self._history_start = start_time - timedelta(days=5)
+            self._history_end = start_time
 
         return prediction

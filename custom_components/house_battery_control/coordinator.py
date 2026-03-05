@@ -29,6 +29,7 @@ from .const import (
     CONF_INVERTER_LIMIT_MAX,
     CONF_LOAD_HIGH_TEMP_THRESHOLD,
     CONF_LOAD_LOW_TEMP_THRESHOLD,
+    CONF_LOAD_CACHE_TTL,
     CONF_LOAD_POWER_ENTITY,
     CONF_LOAD_SENSITIVITY_HIGH_TEMP,
     CONF_LOAD_SENSITIVITY_LOW_TEMP,
@@ -44,6 +45,7 @@ from .const import (
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
     CONF_WEATHER_ENTITY,
+    DEFAULT_LOAD_CACHE_TTL,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SOLCAST_TODAY,
     DEFAULT_SOLCAST_TOMORROW,
@@ -97,6 +99,9 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
         )
         self.weather = WeatherManager(hass, config.get(CONF_WEATHER_ENTITY, ""))
         self.load_predictor = LoadPredictor(hass)
+        self.load_predictor.CACHE_TTL_MINUTES = int(
+            config.get(CONF_LOAD_CACHE_TTL, DEFAULT_LOAD_CACHE_TTL)
+        )
 
         # Solar Provider (reads from Solcast HA integration entities)
         self.solar = SolcastSolar(
@@ -697,6 +702,12 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 "last_update": dt_util.utcnow().isoformat(),
                 "update_count": self._update_count,
                 "load_history": getattr(self.load_predictor, "last_history", []),
+                # Feature 022: cache observability
+                "load_cache_date": str(self.load_predictor.cache_date) if self.load_predictor.cache_date else None,
+                "load_cache_refreshed_at": self.load_predictor.cache_refreshed_at.isoformat() if self.load_predictor.cache_refreshed_at else None,
+                "load_history_start": self.load_predictor.history_start.isoformat() if self.load_predictor.history_start else None,
+                "load_history_end": self.load_predictor.history_end.isoformat() if self.load_predictor.history_end else None,
+                "load_cache_ttl_minutes": self.load_predictor.CACHE_TTL_MINUTES,
             }
         except Exception as err:
             raise UpdateFailed(f"Error in HBC update cycle: {err}")

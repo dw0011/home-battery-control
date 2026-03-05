@@ -978,14 +978,15 @@ async def test_cache_prevents_second_db_call(mock_hass):
 
 
 @pytest.mark.asyncio
-async def test_cache_expires_after_midnight(mock_hass):
-    """TR-003: Call at day1 noon then day2 00:10 — second call MUST invoke get_significant_states."""
+async def test_cache_expires_after_ttl(mock_hass):
+    """TR-003: Cache must expire after CACHE_TTL_MINUTES (default 360 = 6hr)."""
     import datetime as dt
     from unittest.mock import AsyncMock, MagicMock, patch
 
     from homeassistant.core import State
 
     predictor = LoadPredictor(mock_hass)
+    # Use default TTL (360 min = 6 hr)
 
     async def mock_add_executor_job(func, *args):
         return func(*args)
@@ -993,9 +994,8 @@ async def test_cache_expires_after_midnight(mock_hass):
     mock_hass.async_add_executor_job = AsyncMock(side_effect=mock_add_executor_job)
     mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kW"})
 
-    day1_noon = dt.datetime(2025, 2, 20, 12, 0, 0, tzinfo=dt.timezone.utc)
-    day2_morning = dt.datetime(2025, 2, 21, 0, 10, 0, tzinfo=dt.timezone.utc)
-    base_past = day1_noon - dt.timedelta(days=1)
+    t1 = dt.datetime(2025, 2, 20, 10, 0, 0, tzinfo=dt.timezone.utc)
+    base_past = t1 - dt.timedelta(days=1)
 
     mock_states = [
         State("sensor.load", "1.0", last_updated=base_past, last_changed=base_past),
@@ -1007,22 +1007,34 @@ async def test_cache_expires_after_midnight(mock_hass):
         "homeassistant.components.recorder.history.get_significant_states",
         mock_get_states,
     ):
-        # Day 1 call
-        with patch("homeassistant.util.dt.now", return_value=day1_noon):
+        # First call at t1
+        with patch("homeassistant.util.dt.now", return_value=t1):
             await predictor.async_predict(
-                day1_noon, duration_hours=1, load_entity_id="sensor.load"
+                t1, duration_hours=1, load_entity_id="sensor.load"
             )
-        count_after_day1 = mock_get_states.call_count
+        count_after_first = mock_get_states.call_count
 
-        # Day 2 call (after 00:05) — cache should be stale
-        with patch("homeassistant.util.dt.now", return_value=day2_morning):
+        # Call 359 min later — just within 360 min TTL, cache should hold
+        t2 = t1 + dt.timedelta(minutes=359)
+        with patch("homeassistant.util.dt.now", return_value=t2):
             await predictor.async_predict(
-                day2_morning, duration_hours=1, load_entity_id="sensor.load"
+                t2, duration_hours=1, load_entity_id="sensor.load"
             )
-        count_after_day2 = mock_get_states.call_count
+        count_after_within = mock_get_states.call_count
+        assert count_after_within == count_after_first, (
+            "Cache should still be valid at 359 min with 360 min TTL"
+        )
 
-    assert count_after_day2 > count_after_day1, (
-        "Cache should have expired after midnight — recorder should be called again"
+        # Call 361 min later — past 360 min TTL, cache should expire
+        t3 = t1 + dt.timedelta(minutes=361)
+        with patch("homeassistant.util.dt.now", return_value=t3):
+            await predictor.async_predict(
+                t3, duration_hours=1, load_entity_id="sensor.load"
+            )
+        count_after_expired = mock_get_states.call_count
+
+    assert count_after_expired > count_after_within, (
+        "Cache should have expired at 361 min with 360 min TTL — recorder should be called again"
     )
 
 
@@ -1084,4 +1096,176 @@ async def test_cached_output_matches_fresh_output(mock_hass):
     assert len(result_fresh) == len(result_cached), "Lengths differ"
     for i, (fresh, cached) in enumerate(zip(result_fresh, result_cached)):
         assert fresh == cached, f"Mismatch at index {i}: fresh={fresh}, cached={cached}"
+
+
+@pytest.mark.asyncio
+async def test_cache_metadata_exposed(mock_hass):
+    """SC-004: cache_date and cache_refreshed_at are None before first call, populated after."""
+    import datetime as dt
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from homeassistant.core import State
+
+    predictor = LoadPredictor(mock_hass)
+
+    # Before first call — both should be None
+    assert predictor.cache_date is None
+    assert predictor.cache_refreshed_at is None
+
+    async def mock_add_executor_job(func, *args):
+        return func(*args)
+
+    mock_hass.async_add_executor_job = AsyncMock(side_effect=mock_add_executor_job)
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kW"})
+
+    start = dt.datetime(2025, 2, 20, 12, 0, 0, tzinfo=dt.timezone.utc)
+    base_past = start - dt.timedelta(days=1)
+
+    mock_states = [
+        State("sensor.load", "1.0", last_updated=base_past, last_changed=base_past),
+    ]
+
+    mock_get_states = MagicMock(return_value={"sensor.load": mock_states})
+
+    with patch(
+        "homeassistant.components.recorder.history.get_significant_states",
+        mock_get_states,
+    ), patch(
+        "homeassistant.util.dt.now",
+        return_value=start,
+    ):
+        await predictor.async_predict(
+            start, duration_hours=1, load_entity_id="sensor.load"
+        )
+
+    # After first call — both should be populated
+    assert predictor.cache_date is not None, "cache_date should be set after first call"
+    assert predictor.cache_refreshed_at is not None, "cache_refreshed_at should be set after first call"
+    assert isinstance(predictor.cache_date, dt.date)
+    assert isinstance(predictor.cache_refreshed_at, dt.datetime)
+
+
+@pytest.mark.asyncio
+async def test_configurable_cache_ttl_respected(mock_hass):
+    """TTL set on LoadPredictor must control cache expiry, not a hardcoded value."""
+    import datetime as dt
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from homeassistant.core import State
+
+    predictor = LoadPredictor(mock_hass)
+    predictor.CACHE_TTL_MINUTES = 15  # 15-minute TTL
+
+    async def mock_add_executor_job(func, *args):
+        return func(*args)
+
+    mock_hass.async_add_executor_job = AsyncMock(side_effect=mock_add_executor_job)
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kW"})
+
+    t1 = dt.datetime(2025, 3, 1, 10, 0, 0, tzinfo=dt.timezone.utc)
+    base_past = t1 - dt.timedelta(days=1)
+
+    mock_states = [
+        State("sensor.load", "1.5", last_updated=base_past, last_changed=base_past),
+    ]
+    mock_get_states = MagicMock(return_value={"sensor.load": mock_states})
+
+    with patch(
+        "homeassistant.components.recorder.history.get_significant_states",
+        mock_get_states,
+    ):
+        # First call at t1
+        with patch("homeassistant.util.dt.now", return_value=t1):
+            await predictor.async_predict(
+                t1, duration_hours=1, load_entity_id="sensor.load"
+            )
+        count_after_first = mock_get_states.call_count
+
+        # Second call 10 min later — within 15 min TTL, cache should hold
+        t2 = t1 + dt.timedelta(minutes=10)
+        with patch("homeassistant.util.dt.now", return_value=t2):
+            await predictor.async_predict(
+                t2, duration_hours=1, load_entity_id="sensor.load"
+            )
+        count_after_cached = mock_get_states.call_count
+        assert count_after_cached == count_after_first, (
+            "Cache should still be valid at 10 min with 15/min TTL"
+        )
+
+        # Third call 20 min later — past 15 min TTL, cache should expire
+        t3 = t1 + dt.timedelta(minutes=20)
+        with patch("homeassistant.util.dt.now", return_value=t3):
+            await predictor.async_predict(
+                t3, duration_hours=1, load_entity_id="sensor.load"
+            )
+        count_after_expired = mock_get_states.call_count
+
+    assert count_after_expired > count_after_cached, (
+        "Cache should have expired at 20 min with 15 min TTL — recorder should be called again"
+    )
+
+
+@pytest.mark.asyncio
+async def test_default_cache_ttl_is_class_constant(mock_hass):
+    """LoadPredictor default TTL should be 360 minutes (6 hours)."""
+    predictor = LoadPredictor(mock_hass)
+    assert hasattr(predictor, "CACHE_TTL_MINUTES"), "CACHE_TTL_MINUTES must exist"
+    assert predictor.CACHE_TTL_MINUTES == 360, (
+        f"Default CACHE_TTL_MINUTES should be 360 (6hr), got {predictor.CACHE_TTL_MINUTES}"
+    )
+
+    # Verify TTL is overridable (as coordinator does from config)
+    predictor.CACHE_TTL_MINUTES = 120
+    assert predictor.CACHE_TTL_MINUTES == 120, "TTL should be overridable"
+
+
+@pytest.mark.asyncio
+async def test_cache_metadata_includes_history_range(mock_hass):
+    """history_start and history_end must be populated after first predict call."""
+    import datetime as dt
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from homeassistant.core import State
+
+    predictor = LoadPredictor(mock_hass)
+
+    # Before first call — should be None
+    assert predictor.history_start is None
+    assert predictor.history_end is None
+
+    async def mock_add_executor_job(func, *args):
+        return func(*args)
+
+    mock_hass.async_add_executor_job = AsyncMock(side_effect=mock_add_executor_job)
+    mock_hass.states.get.return_value = MagicMock(attributes={"unit_of_measurement": "kW"})
+
+    start = dt.datetime(2025, 3, 1, 14, 0, 0, tzinfo=dt.timezone.utc)
+    base_past = start - dt.timedelta(days=1)
+
+    mock_states = [
+        State("sensor.load", "2.0", last_updated=base_past, last_changed=base_past),
+    ]
+    mock_get_states = MagicMock(return_value={"sensor.load": mock_states})
+
+    with patch(
+        "homeassistant.components.recorder.history.get_significant_states",
+        mock_get_states,
+    ), patch(
+        "homeassistant.util.dt.now",
+        return_value=start,
+    ):
+        await predictor.async_predict(
+            start, duration_hours=1, load_entity_id="sensor.load"
+        )
+
+    # After first call — should be populated with 5-day window
+    assert predictor.history_start is not None, "history_start should be set"
+    assert predictor.history_end is not None, "history_end should be set"
+    expected_start = start - dt.timedelta(days=5)
+    assert predictor.history_start == expected_start, (
+        f"history_start should be start_time - 5 days, got {predictor.history_start}"
+    )
+    assert predictor.history_end == start, (
+        f"history_end should be start_time, got {predictor.history_end}"
+    )
 
