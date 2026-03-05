@@ -168,11 +168,16 @@ class LinearBatteryController:
             bounds[dg_off + i] = (-max_grid, 0.0)
 
         # Battery state bounds with dynamic feasibility gradient — §8
+        # Terminal valuation — §9: computed from raw acquisition_cost
+        median_buy = statistics.median(price_buy) if price_buy else acquisition_cost
+        blended = (median_buy + acquisition_cost) / 2.0
+        terminal_valuation = max(acquisition_cost, blended)
+
         reserve_kwh = capacity * (reserve_soc / 100.0)
         for i in range(number_step + 1):
             if i == number_step:
-                # Terminal valuation — §9
-                obj[b_off + i] = -max(0.001, acquisition_cost)
+                # Terminal valuation — §9 (prevents full discharge)
+                obj[b_off + i] = -max(0.001, terminal_valuation)
             else:
                 obj[b_off + i] = 0.0
             physically_accessible = current + i * charge_limit * eta_in
@@ -348,11 +353,6 @@ class LinearBatteryStateMachine(BatteryStateMachine):
             discharging_efficiency=one_way_eff,
         )
 
-        # --- Terminal valuation — §9 ---
-        median_buy = statistics.median(price_buy) if price_buy else context.acquisition_cost
-        blended = (median_buy + context.acquisition_cost) / 2.0
-        terminal_valuation = max(context.acquisition_cost, blended)
-
         try:
             target_soc_frac, projected_cost, raw_dh, raw_dg, sequence = (
                 self.controller.propose_state_of_charge(
@@ -361,7 +361,7 @@ class LinearBatteryStateMachine(BatteryStateMachine):
                     price_sell=price_sell,
                     load_forecast=load_f,
                     pv_forecast=pv_f,
-                    acquisition_cost=terminal_valuation,
+                    acquisition_cost=context.acquisition_cost,
                     reserve_soc=float(context.config.get("reserve_soc", 0.0)),
                     no_import_steps=no_import_steps if no_import_steps else None,
                 )
