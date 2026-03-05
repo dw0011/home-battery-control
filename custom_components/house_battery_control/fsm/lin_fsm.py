@@ -310,43 +310,21 @@ class LinearBatteryStateMachine(BatteryStateMachine):
         number_step = 288
         self.controller.step = number_step
 
-        # --- Extract & pad forecast arrays — §5 ---
-        def _pad(arr, n, default=0.0):
-            """Return value at index t, clamping to last element or default."""
-            if not arr:
-                return default
-            entry = arr[min(t, len(arr) - 1)]
-            if isinstance(entry, dict):
-                return float(entry.get("kw", default))
-            return float(entry)
+        # --- Fail-fast if solver_inputs not populated (FR-008) ---
+        if context.solver_inputs is None:
+            return FSMResult(
+                state="ERROR",
+                limit_kw=0.0,
+                reason="solver_inputs not populated by coordinator",
+            )
 
-        price_buy = [0.0] * number_step
-        price_sell = [0.0] * number_step
-        price_buy[0] = float(context.current_price)
-        price_sell[0] = float(context.current_export_price)
-        for t in range(1, number_step):
-            if not context.forecast_price:
-                price_buy[t] = float(context.current_price)
-                price_sell[t] = float(context.current_price * 0.8)
-            else:
-                entry = context.forecast_price[min(t, len(context.forecast_price) - 1)]
-                if isinstance(entry, dict):
-                    imp = float(entry.get("import_price", 0.0))
-                    price_buy[t] = imp
-                    price_sell[t] = float(entry.get("export_price", imp * 0.8))
-                else:
-                    price_buy[t] = float(context.current_price)
-                    price_sell[t] = float(context.current_price * 0.8)
-
-        load_f = [0.0] * number_step
-        pv_f = [0.0] * number_step
-        for t in range(number_step):
-            pv_f[t] = _pad(context.forecast_solar, t)
-            load_f[t] = _pad(context.forecast_load, t)
-
-        # kW → kWh per 5-minute step — §4
-        load_f = [kw * (5.0 / 60.0) for kw in load_f]
-        pv_f = [kw * (5.0 / 60.0) for kw in pv_f]
+        # --- Read pre-built arrays from solver_inputs (Feature 024) ---
+        si = context.solver_inputs
+        price_buy = list(si.price_buy)
+        price_sell = list(si.price_sell)
+        load_f = list(si.load_kwh)
+        pv_f = list(si.pv_kwh)
+        no_import_steps = si.no_import_steps if si.no_import_steps else set()
 
         # --- Battery model — §6 ---
         capacity = max(13.5, context.config.get("battery_capacity",
@@ -372,30 +350,6 @@ class LinearBatteryStateMachine(BatteryStateMachine):
         blended = (median_buy + context.acquisition_cost) / 2.0
         terminal_valuation = max(context.acquisition_cost, blended)
 
-        # --- No-Import Periods (Feature 010) ---
-        no_import_steps: set[int] = set()
-        nip_config = context.config.get("no_import_periods", "")
-        nip_periods = _parse_no_import_periods(nip_config)
-        if nip_periods and context.forecast_price:
-            # Use forecast_price timestamps to map steps to wall-clock time
-            for t in range(number_step):
-                idx = min(t, len(context.forecast_price) - 1)
-                entry = context.forecast_price[idx]
-                if isinstance(entry, dict) and "start" in entry:
-                    step_dt = entry["start"]
-                    # Convert to local time for comparison
-                    try:
-                        local_t = step_dt.astimezone().time()
-                    except Exception:
-                        local_t = step_dt.time() if hasattr(step_dt, "time") else None
-                    if local_t and _is_in_no_import_period(local_t, nip_periods):
-                        no_import_steps.add(t)
-            if no_import_steps:
-                _LOGGER.info(
-                    f"No-import periods active: {len(no_import_steps)} of {number_step} steps blocked"
-                )
-
-        # --- Solve ---
         try:
             target_soc_frac, projected_cost, raw_dh, raw_dg, sequence = (
                 self.controller.propose_state_of_charge(

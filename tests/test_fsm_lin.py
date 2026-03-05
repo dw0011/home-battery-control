@@ -3,12 +3,25 @@
 from datetime import datetime, time, timedelta, timezone
 
 import pytest
-from custom_components.house_battery_control.fsm.base import FSMContext
+from custom_components.house_battery_control.fsm.base import FSMContext, SolverInputs
 from custom_components.house_battery_control.fsm.lin_fsm import (
     LinearBatteryStateMachine,
     _is_in_no_import_period,
     _parse_no_import_periods,
 )
+
+
+def _build_test_solver_inputs(
+    import_price=10.0, export_price=5.0, load_kw=1.5, solar_kw=2.0, n=288
+):
+    """Build a SolverInputs from simple scalar values for testing."""
+    step_hours = 5.0 / 60.0
+    return SolverInputs(
+        price_buy=[import_price] * n,
+        price_sell=[export_price] * n,
+        load_kwh=[load_kw * step_hours] * n,
+        pv_kwh=[solar_kw * step_hours] * n,
+    )
 
 
 @pytest.fixture
@@ -37,6 +50,7 @@ def base_context():
             "inverter_limit": 10.0,
             "round_trip_efficiency": 0.90,
         },
+        solver_inputs=_build_test_solver_inputs(10.0, 5.0, 1.5, 2.0),
     )
     context.acquisition_cost = 0.0
     return context
@@ -72,6 +86,17 @@ def test_linear_solver_target_soc_calculation(base_context):
 
     base_context.soc = 10.0  # battery is almost empty
 
+    # Rebuild solver_inputs to match mutated forecasts
+    step_h = 5.0 / 60.0
+    # First 50 steps very cheap, rest very expensive — unambiguous charge incentive
+    pb = [0.01] * 50 + [100.0] * 238
+    base_context.solver_inputs = SolverInputs(
+        price_buy=pb,
+        price_sell=[0.0] * 288,
+        load_kwh=[5.0 * step_h] * 288,  # high load
+        pv_kwh=[0.0] * 288,             # no solar
+    )
+
     fsm = LinearBatteryStateMachine()
     result = fsm.calculate_next_state(base_context)
     print("TEST 2 RESULT:", vars(result))
@@ -105,6 +130,23 @@ def test_inverter_physical_bounds_limit_kw(base_context):
 
     base_context.soc = 0.0
     base_context.config["battery_rate_max"] = 5.0  # strictly clamp physical battery limit
+
+    # Rebuild solver_inputs to match mutated forecasts
+    step_h = 5.0 / 60.0
+    pb = [0.05] * 288
+    pb[0] = 0.01  # step 0 cheapest
+    ps = [0.05] * 288
+    ps[0] = 0.01
+    pb[20] = 100.0  # future positive price
+    lf = [0.0 * step_h] * 288
+    lf[0] = 5.0 * step_h
+    lf[20] = 5.0 * step_h
+    base_context.solver_inputs = SolverInputs(
+        price_buy=pb,
+        price_sell=ps,
+        load_kwh=lf,
+        pv_kwh=[0.0] * 288,
+    )
 
     fsm = LinearBatteryStateMachine()
     result = fsm.calculate_next_state(base_context)
@@ -217,6 +259,13 @@ class TestNoImportPeriodLP:
                 # Block 15:00-21:00 — steps starting at 14:00 + 12*5min = 15:00 onwards
                 "no_import_periods": "15:00-21:00",
             },
+            solver_inputs=SolverInputs(
+                price_buy=[0.01] * 288,
+                price_sell=[0.005] * 288,
+                load_kwh=[2.0 * 5.0 / 60.0] * 288,
+                pv_kwh=[0.0] * 288,
+                no_import_steps={t for t in range(12, 84 + 1)},  # 15:00-21:00
+            ),
         )
         context.acquisition_cost = 0.0
 
@@ -269,6 +318,7 @@ class TestAcqGateBlocksUnprofitableDischarge:
                 "inverter_limit": 10.0,
                 "round_trip_efficiency": 0.90,
             },
+            solver_inputs=_build_test_solver_inputs(5.0, 10.0, 0.5, 0.0),
         )
         # Acquisition cost ABOVE export price → gate should block
         context.acquisition_cost = 15.0
@@ -318,6 +368,7 @@ class TestAcqGateAllowsProfitableDischarge:
                 "inverter_limit": 10.0,
                 "round_trip_efficiency": 0.90,
             },
+            solver_inputs=_build_test_solver_inputs(5.0, 50.0, 0.5, 0.0),
         )
         # Acquisition cost well below export price → discharge profitable
         context.acquisition_cost = 5.0
@@ -380,3 +431,97 @@ class TestAcqGatePropagatesSoC:
                 assert step_acq > 0, (
                     f"Plan step {i}: acquisition_cost={step_acq} should be positive"
                 )
+
+
+# ---------------------------------------------------------------------------
+#  Solver Input Separation tests (Feature 024)
+# ---------------------------------------------------------------------------
+
+
+class TestSolverInputsSeparation:
+    """Tests for the SolverInputs contract on LinearBatteryStateMachine."""
+
+    def test_solver_fails_fast_without_solver_inputs(self):
+        """T003: FR-008 — solver MUST return ERROR when solver_inputs is None."""
+        context = FSMContext(
+            soc=50.0,
+            load_power=1.0,
+            solar_production=0.0,
+            grid_voltage=240.0,
+            current_price=10.0,
+            forecast_price=[],
+            forecast_solar=[],
+            forecast_load=[],
+            config={"battery_capacity": 27.0, "battery_rate_max": 6.3,
+                    "inverter_limit": 10.0, "round_trip_efficiency": 0.90},
+            solver_inputs=None,   # deliberately None
+        )
+        fsm = LinearBatteryStateMachine()
+        result = fsm.calculate_next_state(context)
+        assert result.state == "ERROR", (
+            f"Expected ERROR when solver_inputs is None, got {result.state}"
+        )
+
+    def test_solver_uses_solver_inputs_prices(self):
+        """T004: FR-005/SC-003 — solver row-0 price must come from solver_inputs,
+        not context.current_price."""
+        from custom_components.house_battery_control.fsm.base import SolverInputs
+
+        # Set current_price to 999 — if the solver uses this, the plan will be wrong
+        si = SolverInputs(
+            price_buy=[10.0] * 288,
+            price_sell=[5.0] * 288,
+            load_kwh=[0.1] * 288,
+            pv_kwh=[0.0] * 288,
+        )
+        context = FSMContext(
+            soc=50.0,
+            load_power=1.0,
+            solar_production=0.0,
+            grid_voltage=240.0,
+            current_price=999.0,  # deliberately divergent
+            forecast_price=[],
+            forecast_solar=[],
+            forecast_load=[],
+            config={"battery_capacity": 27.0, "battery_rate_max": 6.3,
+                    "inverter_limit": 10.0, "round_trip_efficiency": 0.90},
+            solver_inputs=si,
+        )
+        fsm = LinearBatteryStateMachine()
+        result = fsm.calculate_next_state(context)
+        assert result.state != "ERROR", f"Solver should not error: {result.reason}"
+        # Verify plan row-0 uses SI price (10.0), not context price (999.0)
+        assert result.future_plan is not None
+        assert result.future_plan[0]["import_price"] == 10.0, (
+            f"Row-0 import_price should be 10.0 from solver_inputs, "
+            f"got {result.future_plan[0]['import_price']}"
+        )
+
+    def test_solver_no_dict_parsing(self):
+        """T005: FR-005 — solver works with empty forecast_price when solver_inputs
+        is populated. Proves no fallback to dict parsing."""
+        from custom_components.house_battery_control.fsm.base import SolverInputs
+
+        si = SolverInputs(
+            price_buy=[15.0] * 288,
+            price_sell=[7.0] * 288,
+            load_kwh=[0.1] * 288,
+            pv_kwh=[0.05] * 288,
+        )
+        context = FSMContext(
+            soc=50.0,
+            load_power=1.0,
+            solar_production=0.0,
+            grid_voltage=240.0,
+            current_price=15.0,
+            forecast_price=None,  # None — solver must not touch this
+            forecast_solar=None,
+            forecast_load=None,
+            config={"battery_capacity": 27.0, "battery_rate_max": 6.3,
+                    "inverter_limit": 10.0, "round_trip_efficiency": 0.90},
+            solver_inputs=si,
+        )
+        fsm = LinearBatteryStateMachine()
+        result = fsm.calculate_next_state(context)
+        assert result.state != "ERROR", f"Solver should not error: {result.reason}"
+
