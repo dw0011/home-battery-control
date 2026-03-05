@@ -226,10 +226,11 @@ class LinearBatteryController:
         running_capacity = battery.current_charge
         running_cost = acquisition_cost
         running_cum_cost = 0.0
+        soc_correction = 0.0  # BUG-025B: accumulate energy retained by gate
         sequence = []
 
         for i in range(number_step):
-            step_b = res.x[b_off + i + 1]
+            step_b = min(res.x[b_off + i + 1] + soc_correction, capacity)
             step_c = res.x[c_off + i]
             step_g = res.x[g_off + i]
             step_dh = abs(res.x[dh_off + i])
@@ -261,7 +262,9 @@ class LinearBatteryController:
             # --- Acquisition cost gate — FR-001: row-by-row check ---
             if state == "DISCHARGE_GRID" and price_sell[i] < running_cost:
                 # FR-002: Battery retains energy — adjust state for subsequent steps
+                soc_correction += step_dg  # BUG-025B: carry forward to future steps
                 running_capacity = running_capacity + step_dg
+                step_b = min(running_capacity, capacity)  # BUG-025B: correct SoC forecast
                 step_dg = 0.0
                 state = "SELF_CONSUMPTION"
                 # FR-005: Recalculate net grid without export

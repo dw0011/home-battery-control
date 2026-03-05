@@ -181,3 +181,126 @@ class TestSocForecastGateBug:
             f"drain={anomalous_drains[0][1]:.1f}%={anomalous_drains[0][2]:.2f}kWh. "
             f"LP battery variable not corrected after gate override."
         )
+
+
+# ===========================================================================
+# LIVE SOLVER REPLAY: Feed captured inputs through actual solver code
+# ===========================================================================
+class TestLiveSolverReplay:
+    """Feed the captured fixture data through the real LP solver and validate
+    that the soc_correction fix produces a physically valid plan.
+    """
+
+    def _run_solver(self, data):
+        """Run the actual solver with fixture data."""
+        from custom_components.house_battery_control.fsm.lin_fsm import (
+            FakeBattery,
+            LinearBatteryController,
+        )
+
+        step_hours = 5.0 / 60.0
+        n = 288
+        capacity = float(data.get("capacity", 27.0))
+        soc_frac = float(data["soc"]) / 100.0
+        charge_rate = float(data.get("charge_rate_max", 6.3))
+        acq_cost = float(data["acquisition_cost"])
+
+        rates = data["rates"]
+        price_buy = [float(r.get("import_price", 0.0)) for r in rates[:n]]
+        price_sell = [float(r.get("export_price", 0.0)) for r in rates[:n]]
+        while len(price_buy) < n:
+            price_buy.append(price_buy[-1])
+            price_sell.append(price_sell[-1])
+
+        load_kwh = [float(data["load_kw"][i]) * step_hours
+                     if i < len(data["load_kw"]) else 0.05
+                     for i in range(n)]
+        pv_kwh = [float(data["pv_kw"][i]) * step_hours
+                   if i < len(data["pv_kw"]) else 0.0
+                   for i in range(n)]
+
+        battery = FakeBattery(
+            capacity=capacity,
+            current_charge=soc_frac,
+            charge_limit=charge_rate,
+            discharge_limit=charge_rate,
+            charging_efficiency=0.975,
+            discharging_efficiency=0.975,
+        )
+
+        controller = LinearBatteryController()
+        _, _, _, _, sequence = controller.propose_state_of_charge(
+            battery=battery,
+            price_buy=price_buy,
+            price_sell=price_sell,
+            load_forecast=load_kwh,
+            pv_forecast=pv_kwh,
+            acquisition_cost=acq_cost,
+        )
+        return sequence
+
+    def test_live_solver_soc_rate_within_limits(self, replay_20260305):
+        """Live solver output: no SoC step should imply power exceeding charge_rate_max."""
+        sequence = self._run_solver(replay_20260305)
+        capacity = float(replay_20260305.get("capacity", 27.0))
+        charge_rate = float(replay_20260305.get("charge_rate_max", 6.3))
+        step_hours = 5.0 / 60.0
+
+        violations = []
+        prev_soc = float(replay_20260305["soc"])
+        for i, step in enumerate(sequence):
+            curr_soc = step["target_soc"]
+            delta_pct = abs(curr_soc - prev_soc)
+            delta_kwh = delta_pct / 100.0 * capacity
+            implied_kw = delta_kwh / step_hours
+
+            if implied_kw > charge_rate * 1.15:  # 15% tolerance
+                violations.append(
+                    f"Step {i}: SoC {prev_soc:.1f}%->{curr_soc:.1f}% "
+                    f"implied={implied_kw:.1f}kW (limit={charge_rate}kW) "
+                    f"state={step['state']}"
+                )
+            prev_soc = curr_soc
+
+        assert not violations, (
+            f"Live solver SoC exceeds charge_rate_max in {len(violations)} steps:\n"
+            + "\n".join(violations[:10])
+        )
+
+    def test_live_solver_self_consumption_drain_consistent(self, replay_20260305):
+        """Live solver: SELF_CONSUMPTION drain should approximately match load - PV."""
+        sequence = self._run_solver(replay_20260305)
+        capacity = float(replay_20260305.get("capacity", 27.0))
+
+        violations = []
+        prev_soc = float(replay_20260305["soc"])
+        for i, step in enumerate(sequence):
+            curr_soc = step["target_soc"]
+            if step["state"] != "SELF_CONSUMPTION":
+                prev_soc = curr_soc
+                continue
+
+            actual_drain_pct = prev_soc - curr_soc
+            if actual_drain_pct < 0:
+                prev_soc = curr_soc
+                continue
+
+            # load and pv are in kW in sequence, drain is in %
+            load_kw = step["load"]
+            pv_kw = step["pv"]
+            expected_drain_kwh = max(0, load_kw - pv_kw) * (5.0 / 60.0)
+            expected_drain_pct = expected_drain_kwh / capacity * 100.0
+
+            if actual_drain_pct > expected_drain_pct * 3 + 0.5:
+                violations.append(
+                    f"Step {i}: drain={actual_drain_pct:.1f}% "
+                    f"expected~{expected_drain_pct:.1f}% "
+                    f"load={load_kw:.2f}kW pv={pv_kw:.2f}kW"
+                )
+            prev_soc = curr_soc
+
+        assert not violations, (
+            f"Live solver SELF_CONSUMPTION drain exceeds load-PV in {len(violations)} steps:\n"
+            + "\n".join(violations[:5])
+        )
+
