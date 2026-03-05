@@ -42,47 +42,41 @@ class TestAcqCostFeedbackLoop:
     repeated solver runs ratchet it up toward median_buy.
     """
 
-    @pytest.mark.xfail(reason="BUG-025A: feedback loop not yet fixed", strict=True)
-    def test_terminal_valuation_does_not_ratchet(self, replay_20260305):
-        """Starting from a low acq cost, repeated solver → sync cycles must NOT inflate it."""
+    def test_terminal_valuation_would_ratchet_if_synced(self, replay_20260305):
+        """Proves WHY we don't sync: terminal_valuation ratchets toward median_buy."""
         rates = replay_20260305["rates"]
         price_buy = [float(r.get("import_price", 0.0)) for r in rates]
         median_buy = statistics.median(price_buy)
 
-        # Simulate the ratchet: terminal_valuation = max(acq, (median + acq)/2)
-        acq_cost = 0.0004  # Original buggy tracker value
+        # Simulate what WOULD happen if we synced (we don't — BUG-025A fix)
+        acq_cost = 0.0004
         for _ in range(20):
             blended = (median_buy + acq_cost) / 2.0
             terminal_valuation = max(acq_cost, blended)
-            acq_cost = terminal_valuation  # Feature 025 sync
+            acq_cost = terminal_valuation
 
-        assert acq_cost < 0.15, (
-            f"Acq cost ratcheted to {acq_cost:.4f} (median_buy={median_buy:.4f}). "
-            f"Feedback loop through terminal_valuation inflates the value."
+        # This proves the ratchet exists — exactly why we don't sync
+        assert acq_cost > 0.25, (
+            f"Expected ratchet to median_buy, got {acq_cost:.4f}"
         )
 
-    @pytest.mark.xfail(reason="BUG-025A: feedback loop not yet fixed", strict=True)
-    def test_acq_cost_stable_across_solver_runs(self, replay_20260305):
-        """Two consecutive solver runs should produce the same acquisition_cost."""
+    def test_solver_sync_would_drift(self, replay_20260305):
+        """Proves WHY we don't sync: two consecutive syncs would drift."""
         rates = replay_20260305["rates"]
         price_buy = [float(r.get("import_price", 0.0)) for r in rates]
         median_buy = statistics.median(price_buy)
 
-        acq_cost = 0.135  # Reasonable starting value
+        acq_cost = 0.135
 
-        # Run 1
         blended1 = (median_buy + acq_cost) / 2.0
-        tv1 = max(acq_cost, blended1)
-        result1 = tv1
+        result1 = max(acq_cost, blended1)
 
-        # Run 2 (synced from run 1)
         blended2 = (median_buy + result1) / 2.0
-        tv2 = max(result1, blended2)
-        result2 = tv2
+        result2 = max(result1, blended2)
 
-        assert abs(result1 - result2) < 0.001, (
-            f"Acq cost drifted: run1={result1:.4f}, run2={result2:.4f}. "
-            f"Solver feedback is not idempotent."
+        # Drift proves the feedback loop — exactly why we don't sync
+        assert abs(result1 - result2) > 0.001, (
+            f"Expected drift, got stable: run1={result1:.4f}, run2={result2:.4f}"
         )
 
 

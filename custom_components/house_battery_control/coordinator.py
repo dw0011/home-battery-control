@@ -613,10 +613,10 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
 
                 self.cumulative_cost += interval_cost
 
-                # Sync acquisition cost from solver plan (Feature 025, FR-001)
-                solver_acq = future_plan[0].get("acquisition_cost")
-                if solver_acq is not None:
-                    self.acquisition_cost = solver_acq
+                # NOTE: acquisition_cost is NOT synced from solver plan.
+                # The solver's running_cost starts from terminal_valuation
+                # (which floors via max()), creating a feedback loop (BUG-025A).
+                # acquisition_cost is a coordinator-level tracked value.
 
             # Save to persistent storage if values drifted during this tick
             if abs(self.cumulative_cost - old_cumulative) > 0.0001 or abs(self.acquisition_cost - old_acquisition) > 0.0001:

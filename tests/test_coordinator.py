@@ -546,13 +546,15 @@ async def test_coordinator_load_stored_costs_valid(mock_hass):
 
 
 class TestAcqCostSolverSync:
-    """Feature 025: Coordinator syncs acquisition_cost from solver plan value."""
+    """Feature 025: Coordinator does NOT sync acquisition_cost from solver plan.
+
+    acquisition_cost is a coordinator-level tracked value. The solver's
+    running_cost starts from terminal_valuation (which applies a max() floor),
+    so syncing from it creates a feedback loop (BUG-025A).
+    """
 
     def _run_cost_tracker(self, coordinator, future_plan, rates_list, soc=50.0):
         """Run just the cost-tracker block from _async_update_data."""
-        old_cumulative = coordinator.cumulative_cost
-        old_acquisition = coordinator.acquisition_cost
-
         if future_plan and rates_list:
             f_net_grid = future_plan[0].get("net_grid", 0.0)
             price = rates_list[0].get(
@@ -567,11 +569,7 @@ class TestAcqCostSolverSync:
 
             coordinator.cumulative_cost += interval_cost
 
-            # --- This is the block being replaced by Feature 025 ---
-            # After fix: coordinator should sync from future_plan[0]["acquisition_cost"]
-            solver_acq = future_plan[0].get("acquisition_cost")
-            if solver_acq is not None:
-                coordinator.acquisition_cost = solver_acq
+            # acquisition_cost is NOT synced from solver plan (BUG-025A fix)
 
     def _make_coordinator(self, acq_cost=0.10):
         """Create a minimal coordinator-like object for cost tracker tests."""
@@ -581,23 +579,23 @@ class TestAcqCostSolverSync:
         coord.config = {"battery_capacity": 27.0}
         return coord
 
-    def test_acq_cost_syncs_from_solver_plan(self):
-        """T01 (FR-001): acquisition_cost should match solver plan row-0 value."""
+    def test_acq_cost_not_overwritten_by_solver(self):
+        """T01 (BUG-025A): acquisition_cost must NOT be overwritten by solver plan."""
         coord = self._make_coordinator(acq_cost=0.10)
         future_plan = [
             {
                 "net_grid": 0.5,
                 "pv": 2.0,
                 "load": 1.5,
-                "acquisition_cost": 0.135,  # Solver says 13.5 c/kWh
+                "acquisition_cost": 0.27,  # Solver says 27c (inflated by terminal_valuation)
             }
         ]
         rates = [{"import_price": 30.0, "export_price": 5.0}]
 
         self._run_cost_tracker(coord, future_plan, rates)
 
-        assert coord.acquisition_cost == 0.135, (
-            f"Expected solver value 0.135, got {coord.acquisition_cost}"
+        assert coord.acquisition_cost == 0.10, (
+            f"Expected coordinator value 0.10 (unchanged), got {coord.acquisition_cost}"
         )
 
     def test_acq_cost_persists_on_empty_plan(self):
@@ -611,7 +609,7 @@ class TestAcqCostSolverSync:
         )
 
     def test_acq_cost_no_double_count(self):
-        """T03 (FR-001): Running tracker twice with same plan gives same value (idempotent)."""
+        """T03: Running tracker twice must not change acquisition_cost (no solver sync)."""
         coord = self._make_coordinator(acq_cost=0.10)
         future_plan = [
             {
@@ -629,8 +627,8 @@ class TestAcqCostSolverSync:
         self._run_cost_tracker(coord, future_plan, rates)
         second_value = coord.acquisition_cost
 
-        assert first_value == second_value == 0.135, (
-            f"Expected idempotent 0.135, got first={first_value}, second={second_value}"
+        assert first_value == second_value == 0.10, (
+            f"Expected idempotent 0.10, got first={first_value}, second={second_value}"
         )
 
     def test_cumulative_cost_unchanged(self):
