@@ -223,7 +223,7 @@ class TestLiveSolverReplay:
         )
 
         controller = LinearBatteryController()
-        _, _, _, _, sequence = controller.propose_state_of_charge(
+        _, _, sequence = controller.propose_state_of_charge(
             battery=battery,
             price_buy=price_buy,
             price_sell=price_sell,

@@ -525,3 +525,91 @@ class TestSolverInputsSeparation:
         result = fsm.calculate_next_state(context)
         assert result.state != "ERROR", f"Solver should not error: {result.reason}"
 
+
+# ---------------------------------------------------------------------------
+#  BUG-026: State agreement — FSM result must match future_plan[0]
+# ---------------------------------------------------------------------------
+class TestStateAgreement:
+    """Verify FSM result state always matches future_plan[0]['state'] (FR-001)."""
+
+    def test_charge_state_matches_plan_row_0(self):
+        """When solver plans CHARGE_GRID at step 0, result.state == plan[0]."""
+        # Low SoC + cheap price → CHARGE_GRID expected
+        si = _build_test_solver_inputs(
+            import_price=0.05, export_price=-0.01, load_kw=2.0, solar_kw=0.0
+        )
+        context = FSMContext(
+            soc=20.0, load_power=2.0, solar_production=0.0, grid_voltage=240.0,
+            current_price=0.05, forecast_price=[], forecast_solar=[], forecast_load=[],
+            config={"battery_capacity": 27.0, "battery_rate_max": 6.3,
+                    "inverter_limit": 10.0, "round_trip_efficiency": 0.90},
+            acquisition_cost=0.10,
+            solver_inputs=si,
+        )
+        result = LinearBatteryStateMachine().calculate_next_state(context)
+        assert result.future_plan, "Plan must not be empty"
+        assert result.state == result.future_plan[0]["state"], (
+            f"State mismatch: result.state={result.state} != "
+            f"plan[0]={result.future_plan[0]['state']}"
+        )
+
+    def test_discharge_state_matches_plan_row_0(self):
+        """When solver plans DISCHARGE_GRID at step 0, result.state == plan[0]."""
+        # High SoC + high sell price → DISCHARGE_GRID expected
+        si = _build_test_solver_inputs(
+            import_price=0.50, export_price=0.30, load_kw=1.0, solar_kw=0.0
+        )
+        context = FSMContext(
+            soc=90.0, load_power=1.0, solar_production=0.0, grid_voltage=240.0,
+            current_price=0.50, forecast_price=[], forecast_solar=[], forecast_load=[],
+            config={"battery_capacity": 27.0, "battery_rate_max": 6.3,
+                    "inverter_limit": 10.0, "round_trip_efficiency": 0.90},
+            acquisition_cost=0.10,
+            solver_inputs=si,
+        )
+        result = LinearBatteryStateMachine().calculate_next_state(context)
+        assert result.future_plan, "Plan must not be empty"
+        assert result.state == result.future_plan[0]["state"], (
+            f"State mismatch: result.state={result.state} != "
+            f"plan[0]={result.future_plan[0]['state']}"
+        )
+
+    def test_self_consumption_state_matches_plan_row_0(self):
+        """When solver plans SELF_CONSUMPTION at step 0, result.state == plan[0]."""
+        # Mid SoC + moderate price + PV covers load → SC expected
+        si = _build_test_solver_inputs(
+            import_price=0.25, export_price=0.08, load_kw=2.0, solar_kw=2.5
+        )
+        context = FSMContext(
+            soc=50.0, load_power=2.0, solar_production=2.5, grid_voltage=240.0,
+            current_price=0.25, forecast_price=[], forecast_solar=[], forecast_load=[],
+            config={"battery_capacity": 27.0, "battery_rate_max": 6.3,
+                    "inverter_limit": 10.0, "round_trip_efficiency": 0.90},
+            acquisition_cost=0.10,
+            solver_inputs=si,
+        )
+        result = LinearBatteryStateMachine().calculate_next_state(context)
+        assert result.future_plan, "Plan must not be empty"
+        assert result.state == result.future_plan[0]["state"], (
+            f"State mismatch: result.state={result.state} != "
+            f"plan[0]={result.future_plan[0]['state']}"
+        )
+
+    def test_self_consumption_has_zero_limit_kw(self):
+        """FR-002: When state is SELF_CONSUMPTION, limit_kw must be 0.0."""
+        si = _build_test_solver_inputs(
+            import_price=0.25, export_price=0.08, load_kw=2.0, solar_kw=2.5
+        )
+        context = FSMContext(
+            soc=50.0, load_power=2.0, solar_production=2.5, grid_voltage=240.0,
+            current_price=0.25, forecast_price=[], forecast_solar=[], forecast_load=[],
+            config={"battery_capacity": 27.0, "battery_rate_max": 6.3,
+                    "inverter_limit": 10.0, "round_trip_efficiency": 0.90},
+            acquisition_cost=0.10,
+            solver_inputs=si,
+        )
+        result = LinearBatteryStateMachine().calculate_next_state(context)
+        if result.state == "SELF_CONSUMPTION":
+            assert result.limit_kw == 0.0, (
+                f"SC must have limit_kw=0, got {result.limit_kw}"
+            )

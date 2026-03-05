@@ -77,7 +77,7 @@ def test_lin_fsm_still_operates_with_lazy_loading(base_context):
     )
 
     assert res is not None
-    assert len(res) == 5
+    assert len(res) == 3
 
 
 @pytest.fixture

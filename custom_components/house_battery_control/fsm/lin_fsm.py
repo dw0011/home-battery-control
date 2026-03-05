@@ -219,13 +219,11 @@ class LinearBatteryController:
 
         if not res.success:
             _LOGGER.warning("LP solver failed: %s", res.message)
-            return battery.current_charge, 0.0, 0.0, 0.0, []
+            return battery.current_charge, 0.0, []
 
         # --- Extract first-step outputs ---
         b_1 = res.x[b_off + 1]
         objective_value = res.fun
-        dh_0 = abs(res.x[dh_off])
-        dg_0 = abs(res.x[dg_off])
 
         # --- Build 288-step future plan sequence ---
         running_capacity = battery.current_charge
@@ -294,11 +292,7 @@ class LinearBatteryController:
                 "cumulative_cost": running_cum_cost,
             })
 
-        # --- FR-007/009: Gate immediate action using gated step 0 ---
-        if sequence and sequence[0]["state"] != "DISCHARGE_GRID":
-            dg_0 = 0.0  # Gate overrode step 0 — suppress grid discharge command
-
-        return b_1 / capacity, objective_value, dh_0, dg_0, sequence
+        return b_1 / capacity, objective_value, sequence
 
 
 # ---------------------------------------------------------------------------
@@ -354,7 +348,7 @@ class LinearBatteryStateMachine(BatteryStateMachine):
         )
 
         try:
-            target_soc_frac, projected_cost, raw_dh, raw_dg, sequence = (
+            target_soc_frac, projected_cost, sequence = (
                 self.controller.propose_state_of_charge(
                     battery=battery,
                     price_buy=price_buy,
@@ -375,48 +369,35 @@ class LinearBatteryStateMachine(BatteryStateMachine):
 
         target_soc_frac = float(target_soc_frac)
 
-        # --- Immediate action classification — §10 ---
+        # --- FR-001 (026): Single state source from sequence[0] ---
+        if sequence:
+            state_0 = sequence[0]["state"]
+        else:
+            state_0 = "SELF_CONSUMPTION"  # FR-003: safe default
+
+        # --- Immediate action limit_kw — FR-002: calculation unchanged ---
         target_delta_kwh = (target_soc_frac - current_soc) * capacity
         power_kw = target_delta_kwh * 12.0  # kWh per 5-min → kW
 
-        if power_kw > 0.1:
+        if state_0 == "CHARGE_GRID" and power_kw > 0.01:
             req = power_kw / battery.charging_efficiency
-            return FSMResult(
-                state="CHARGE_GRID",
-                limit_kw=round(min(limit_kw_charge, req), 2),
-                reason="LP Optimized Charge",
-                target_soc=target_soc_frac * 100.0,
-                projected_cost=projected_cost,
-                future_plan=sequence,
-            )
-        elif power_kw < -0.1:
+            limit_kw = round(min(limit_kw_charge, req), 2)
+        elif state_0 == "DISCHARGE_GRID" and power_kw < -0.01:
             req = abs(power_kw) * battery.discharging_efficiency
-            dg_kw = raw_dg / (5.0 / 60.0)
-            dh_kw = raw_dh / (5.0 / 60.0)
+            limit_kw = round(min(limit_kw_discharge, req), 2)
+        else:
+            limit_kw = 0.0
 
-            if dg_kw > dh_kw:
-                return FSMResult(
-                    state="DISCHARGE_GRID",
-                    limit_kw=round(min(limit_kw_discharge, req), 2),
-                    reason="LP Optimized Grid Export",
-                    target_soc=target_soc_frac * 100.0,
-                    projected_cost=projected_cost,
-                    future_plan=sequence,
-                )
-            else:
-                return FSMResult(
-                    state="SELF_CONSUMPTION",
-                    limit_kw=0.0,
-                    reason="LP Optimized Self-Consumption",
-                    target_soc=target_soc_frac * 100.0,
-                    projected_cost=projected_cost,
-                    future_plan=sequence,
-                )
+        reason_map = {
+            "CHARGE_GRID": "LP Optimized Charge",
+            "DISCHARGE_GRID": "LP Optimized Grid Export",
+            "SELF_CONSUMPTION": "LP Optimized Self-Consumption",
+        }
 
         return FSMResult(
-            state="SELF_CONSUMPTION",
-            limit_kw=0.0,
-            reason="LP Optimization: No action needed",
+            state=state_0,
+            limit_kw=limit_kw,
+            reason=reason_map.get(state_0, "LP Optimization: No action needed"),
             target_soc=target_soc_frac * 100.0,
             projected_cost=projected_cost,
             future_plan=sequence,
