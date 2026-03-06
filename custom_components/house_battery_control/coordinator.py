@@ -288,7 +288,20 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             # FSM Constants
             capacity = self.config.get(CONF_BATTERY_CAPACITY, 27.0)
 
-            # --- 4. Map LP Solver Plan via Array Index ---
+            # --- 4. Determine Interval Prices ---
+            # Use raw unaltered rates from the timeline for accurate UI reflection,
+            # but apply the live price override for step 0 so the UI matches the LP solver's inputs.
+            price = rate.get("import_price", rate.get("price", 0.0))
+            export_price = rate.get("export_price", price * 0.8)
+
+            if idx == 0 and getattr(self, "_current_price_kw", None) is not None:
+                price = self._current_price_kw
+                if getattr(self, "_current_export_price_kw", None) is not None:
+                    export_price = self._current_export_price_kw
+                else:
+                    export_price = price * 0.8
+
+            # --- 5. Map LP Solver Plan via Array Index ---
 
             if future_plan and 0 <= idx < len(future_plan):
                 state = future_plan[idx].get("state", "UNKNOWN")
@@ -296,10 +309,6 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 net_grid_kw = future_plan[idx].get("net_grid", 0.0)
                 pv_kw_avg = future_plan[idx].get("pv", 0.0)
                 load_kw_avg = future_plan[idx].get("load", 0.0)
-                # Use raw unaltered rates from the timeline for accurate UI reflection,
-                # ignoring the computationally clamped internal LP solver prices.
-                price = rate.get("import_price", rate.get("price", 0.0))
-                export_price = rate.get("export_price", price * 0.8)
                 acq_cost = future_plan[idx].get("acquisition_cost", 0.0)
 
                 # Use the FSM's computationally precise Net Grid value natively without overriding it.
@@ -316,11 +325,9 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 net_grid_kw = 0.0
                 pv_kw_avg = 0.0
                 load_kw_avg = 0.0
-                price = rate.get("import_price", rate.get("price", 0.0))
-                export_price = rate.get("export_price", price * 0.8)
                 acq_cost = 0.0
 
-                # --- 5. Fallback Battery Physics ---
+                # --- 6. Fallback Battery Physics ---
                 soc_delta = target_soc - simulated_soc
                 pv_kwh = pv_kw_avg * duration_hours
                 load_kwh = load_kw_avg * duration_hours
