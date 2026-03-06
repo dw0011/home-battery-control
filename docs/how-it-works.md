@@ -96,6 +96,18 @@ RateInterval {
 
 Amber publishes prices in 30-minute blocks. RatesManager **chunks these into 5-minute ticks** so every rate interval matches the solver's resolution. Import and export rates are **merged by start time** into a single timeline.
 
+#### Amber Express Pricing
+
+If the `Use Amber Express format` configuration toggle is enabled, `RatesManager` uses a specialised parser that extracts Amber's embedded 24-hour forecast array directly from the primary import/export sensors.
+
+Because Amber Express provides a range of potential prices (`predicted` and `high`), the system uses a **renewables-based dynamic price blend** to protect the solver from sudden grid-stress price spikes:
+
+- If grid renewables are **≥ 35.0%**: The FSM uses 100% of the `predicted` price.
+- If grid renewables are **≤ 25.0%**: The FSM uses 100% of the `high` price.
+- If renewables fall in the **10% band between 25% and 35%**: The price scales linearly. For example, at 30% renewables, the FSM uses exactly 50% of the predicted price plus 50% of the high price.
+
+This interpolation ensures the solver plans defensively as grid stress increases and dispatch risks rise.
+
 ### 2. Solar Forecast
 
 **Source**: Solcast HACS integration  

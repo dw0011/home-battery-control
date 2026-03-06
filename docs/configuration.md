@@ -77,6 +77,7 @@ The adjustment uses an **excess-based formula**: only the portion of temperature
 | `export_price_entity` | Export Price Forecast | — | Amber Electric export/feed-in price sensor. Reports c/kWh with `forecast` attribute. |
 | `current_import_price_entity` | Current Import Price | — | **Optional:** Sensor tracking Amber's instantaneous/live import price. Decouples step 0 from forecast arrays. |
 | `current_export_price_entity` | Current Export Price | — | **Optional:** Sensor tracking Amber's instantaneous/live export price. |
+| `use_amber_express` | Use Amber Express format | `False` | Enable if your Amber sensors use the detailed 'Amber Express' forecasting data structure. |
 | `weather_entity` | Weather Entity | — | Any HA weather entity providing temperature forecasts. |
 | `solcast_today_entity` | Solcast Today | `sensor.solcast_pv_forecast_today` | Solcast PV forecast for today. |
 | `solcast_tomorrow_entity` | Solcast Tomorrow | `sensor.solcast_pv_forecast_tomorrow` | Solcast PV forecast for tomorrow. |
