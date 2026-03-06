@@ -41,13 +41,20 @@ The new configuration switch `CONF_USE_AMBER_EXPRESS` will be added to the Optio
 
 #### [MODIFY] `custom_components/house_battery_control/rates.py`
 - Update `__init__` to accept `use_amber_express: bool = False`.
-- In `_parse_entity`, intercept the `raw_data` assignment.
-- If `use_amber_express` is True, `raw_data` should explicitly read:
+- Update `update()` to branch based on `self._use_amber_express`:
   ```python
   if self._use_amber_express:
-      raw_data = state.attributes.get("forecasts", [])
+      import_rates = self._parse_amber_express_entity(self._import_entity_id, "import")
+      export_rates = self._parse_amber_express_entity(self._export_entity_id, "export")
+  else:
+      import_rates = self._parse_entity(self._import_entity_id, "import")
+      export_rates = self._parse_entity(self._export_entity_id, "export")
   ```
-- **Price Extraction and Blending (FR-003, FR-004)**: During the loop over `raw_data`, calculate the price dynamically.
+- **[NEW METHOD]** Create `_parse_amber_express_entity(self, entity_id, label)`:
+  - This method exclusively reads `state.attributes.get("forecasts", [])`.
+  - It loops through the `forecasts` list and exacts prices using the exact `advanced_price_predicted` logic.
+  
+  **Price Extraction and Blending (FR-003, FR-004)**: During the loop over `raw_data`, calculate the price dynamically.
   - Extract `renewables = float(interval.get("renewables", 100.0))`
   - Extract `advanced = interval.get("advanced_price_predicted", {})`
   - `predicted_price = float(advanced.get("predicted", interval.get("per_kwh", 0.0)))`
@@ -66,7 +73,7 @@ The new configuration switch `CONF_USE_AMBER_EXPRESS` will be added to the Optio
       price = predicted_price + (ratio * (high_price - predicted_price))
   ```
 
-- Since Amber Express provides 30-minute chunks, the existing Phase 8 loop in `rates.py` (lines 102-119) will automatically chunk these newly calculated blended prices into 5-minute ticks for the LP solver.
+- Re-implement the Phase 8 loop (from the standard `_parse_entity`) identically inside `_parse_amber_express_entity` to ensure the dynamically calculated `price` is chunked into native 5-minute ticks.
 
 ## Verification Plan
 
