@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from datetime import timedelta
 from typing import Any
 
@@ -90,6 +91,11 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
         self.cumulative_cost: float = 0.0
         self.acquisition_cost: float = 0.10
         self.store = Store(hass, 1, "house_battery_control.cost_data")
+
+        # Feature 027: Debug replay snapshot
+        self._solver_snapshot: dict | None = None
+        self._state_transitions: deque = deque(maxlen=10)
+        self._previous_state: str | None = None
 
         # Initialize Managers
         self.rates = RatesManager(
@@ -617,6 +623,39 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 self.fsm.calculate_next_state, fsm_context
             )
 
+            # --- Feature 027: Capture solver snapshot for debug replay ---
+            si = fsm_context.solver_inputs
+            snapshot = {
+                "timestamp": dt_util.utcnow().isoformat(),
+                "solver_inputs": {
+                    "price_buy": list(si.price_buy) if si else [],
+                    "price_sell": list(si.price_sell) if si else [],
+                    "load_kwh": list(si.load_kwh) if si else [],
+                    "pv_kwh": list(si.pv_kwh) if si else [],
+                    "no_import_steps": sorted(si.no_import_steps) if si and si.no_import_steps else [],
+                },
+                "battery": {
+                    "soc": round(soc, 2),
+                    "capacity": self.config.get(CONF_BATTERY_CAPACITY, 27.0),
+                    "charge_rate_max": self.config.get(CONF_BATTERY_CHARGE_RATE_MAX, 6.3),
+                    "inverter_limit": self.config.get(CONF_INVERTER_LIMIT_MAX, 10.0),
+                    "round_trip_efficiency": fsm_context.config.get("round_trip_efficiency", 0.90),
+                    "reserve_soc": self.config.get(CONF_RESERVE_SOC, 0.0),
+                },
+                "acquisition_cost": round(self.acquisition_cost, 6),
+                "result": {
+                    "state": fsm_result.state,
+                    "limit_kw": fsm_result.limit_kw,
+                    "target_soc": getattr(fsm_result, "target_soc", None),
+                },
+            }
+            self._solver_snapshot = snapshot
+
+            # Auto-capture on state transition (FR-003)
+            if self._previous_state is not None and fsm_result.state != self._previous_state:
+                self._state_transitions.appendleft(snapshot)
+            self._previous_state = fsm_result.state
+
             # Apply state to Powerwall
             await self.executor.apply_state(fsm_result.state, fsm_result.limit_kw)
 
@@ -708,6 +747,9 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 "load_history_start": self.load_predictor.history_start.isoformat() if self.load_predictor.history_start else None,
                 "load_history_end": self.load_predictor.history_end.isoformat() if self.load_predictor.history_end else None,
                 "load_cache_ttl_minutes": self.load_predictor.CACHE_TTL_MINUTES,
+                # Feature 027: Debug replay
+                "solver_snapshot": self._solver_snapshot,
+                "state_transitions": list(self._state_transitions),
             }
         except Exception as err:
             raise UpdateFailed(f"Error in HBC update cycle: {err}")

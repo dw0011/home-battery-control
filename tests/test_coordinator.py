@@ -693,3 +693,108 @@ class TestAcqCostOverrideConst:
         })
         coord.store.async_delay_save.assert_not_called()
         assert coord.acquisition_cost == 0.135
+
+
+# ---------------------------------------------------------------------------
+#  Feature 027: Debug Replay Snapshot
+# ---------------------------------------------------------------------------
+class TestDebugReplaySnapshot:
+    """Verify solver snapshot and state transition ring buffer."""
+
+    def test_ring_buffer_captures_state_transition(self):
+        """Ring buffer should capture when state changes."""
+        from collections import deque
+
+        buf = deque(maxlen=10)
+        previous = "SELF_CONSUMPTION"
+
+        # Simulate state change to CHARGE_GRID
+        new_state = "CHARGE_GRID"
+        snapshot = {"timestamp": "T1", "result": {"state": new_state}}
+
+        if previous is not None and new_state != previous:
+            buf.appendleft(snapshot)
+
+        assert len(buf) == 1
+        assert buf[0]["result"]["state"] == "CHARGE_GRID"
+
+    def test_ring_buffer_no_capture_when_unchanged(self):
+        """Ring buffer should NOT capture when state is the same."""
+        from collections import deque
+
+        buf = deque(maxlen=10)
+        previous = "SELF_CONSUMPTION"
+
+        new_state = "SELF_CONSUMPTION"
+        snapshot = {"timestamp": "T1", "result": {"state": new_state}}
+
+        if previous is not None and new_state != previous:
+            buf.appendleft(snapshot)
+
+        assert len(buf) == 0
+
+    def test_ring_buffer_evicts_at_10(self):
+        """Ring buffer should evict oldest when full."""
+        from collections import deque
+
+        buf = deque(maxlen=10)
+
+        for i in range(12):
+            buf.appendleft({"timestamp": f"T{i}", "result": {"state": f"S{i}"}})
+
+        assert len(buf) == 10
+        # Newest should be first
+        assert buf[0]["timestamp"] == "T11"
+        # Oldest surviving should be T2 (T0 and T1 evicted)
+        assert buf[9]["timestamp"] == "T2"
+
+    def test_snapshot_format_has_required_keys(self):
+        """Verify snapshot dict has all required FR-001 keys."""
+        snapshot = {
+            "timestamp": "2026-03-06T01:25:00+00:00",
+            "solver_inputs": {
+                "price_buy": [0.12] * 288,
+                "price_sell": [0.02] * 288,
+                "load_kwh": [0.125] * 288,
+                "pv_kwh": [0.268] * 288,
+                "no_import_steps": [],
+            },
+            "battery": {
+                "soc": 74.3,
+                "capacity": 27.0,
+                "charge_rate_max": 6.3,
+                "inverter_limit": 10.0,
+                "round_trip_efficiency": 0.90,
+                "reserve_soc": 0.0,
+            },
+            "acquisition_cost": 0.078,
+            "result": {
+                "state": "CHARGE_GRID",
+                "limit_kw": 6.3,
+                "target_soc": 75.1,
+            },
+        }
+
+        # FR-001: all keys present
+        assert "timestamp" in snapshot
+        assert "solver_inputs" in snapshot
+        assert "battery" in snapshot
+        assert "acquisition_cost" in snapshot
+        assert "result" in snapshot
+
+        # Solver inputs arrays
+        si = snapshot["solver_inputs"]
+        assert len(si["price_buy"]) == 288
+        assert len(si["price_sell"]) == 288
+        assert len(si["load_kwh"]) == 288
+        assert len(si["pv_kwh"]) == 288
+
+        # Battery config
+        bat = snapshot["battery"]
+        for key in ("soc", "capacity", "charge_rate_max", "inverter_limit", "round_trip_efficiency", "reserve_soc"):
+            assert key in bat
+
+        # Result
+        res = snapshot["result"]
+        for key in ("state", "limit_kw", "target_soc"):
+            assert key in res

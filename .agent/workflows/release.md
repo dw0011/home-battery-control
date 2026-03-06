@@ -6,6 +6,18 @@ description: MANDATORY versioning and release workflow. Must be followed before 
 
 // turbo-all
 
+## GITHUB CLI TIMING RULES (MANDATORY)
+
+`gh` commands (release, issue, pr) do NOT produce detectable completion output.
+Using `command_status` on them returns RUNNING indefinitely, even after they succeed.
+
+**Rules:**
+1. ALL `gh` commands MUST use `WaitMsBeforeAsync: 3000` (3-second fire-and-forget)
+2. NEVER call `command_status` on a `gh` command — it will appear stuck
+3. After firing a `gh` command, immediately proceed to the next step
+4. If verification is critical, use a SEPARATE command: `gh release list --limit 3` or `gh release view vX.Y.Z`
+5. The same rule applies to `gh issue create`, `gh issue close`, `gh pr create`
+
 ## VERSIONING RULES (MANDATORY)
 
 Before bumping ANY version, you MUST check the current latest tag:
@@ -29,11 +41,11 @@ Before bumping ANY version, you MUST check the current latest tag:
 3. Run `pytest tests/ -v` — ALL tests must pass
 4. Run `ruff check custom_components/ tests/` — must be clean
 5. Commit: `git add -A; git commit -m "chore: bump version to X.Y.Z"`
-6. Push: `git push origin main`
+6. Push: `git push origin main` (WaitMsBeforeAsync: 10000)
 7. Tag: `git tag vX.Y.Z`
-8. Push tag: `git push origin vX.Y.Z`
-9. Create release: `gh release create vX.Y.Z --title "vX.Y.Z — <summary>" --notes "<release notes>"`
-10. Verify: `gh release view vX.Y.Z`
+8. Push tag: `git push origin vX.Y.Z` (WaitMsBeforeAsync: 10000)
+9. Create release: `gh release create vX.Y.Z --title "vX.Y.Z — <summary>" --notes "<release notes>"` (**WaitMsBeforeAsync: 3000, do NOT wait**)
+10. Verify (separate command, 3s later): `gh release list --limit 3`
 
 ## HACS COMPATIBILITY
 
