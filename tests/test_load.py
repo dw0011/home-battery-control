@@ -960,13 +960,13 @@ async def test_cache_prevents_second_db_call(mock_hass):
         return_value=start,
     ):
         # First call — should fetch from recorder
-        result1 = await predictor.async_predict(
+        await predictor.async_predict(
             start, duration_hours=1, load_entity_id="sensor.load"
         )
         first_call_count = mock_get_states.call_count
 
         # Second call — cache should prevent DB call
-        result2 = await predictor.async_predict(
+        await predictor.async_predict(
             start, duration_hours=1, load_entity_id="sensor.load"
         )
         second_call_count = mock_get_states.call_count

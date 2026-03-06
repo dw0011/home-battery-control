@@ -160,7 +160,7 @@ class RatesManager:
 
                 renewables = float(interval.get("renewables", 100.0))
                 advanced = interval.get("advanced_price_predicted", {})
-                
+
                 predicted_price = float(advanced.get("predicted", interval.get("per_kwh", 0.0)))
                 high_price = float(advanced.get("high", predicted_price))
 
