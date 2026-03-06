@@ -45,7 +45,9 @@ As a user with Amber Express pricing, I want the system to correctly predict fut
 - **FR-004**: `RatesManager` MUST apply a linear blend to the price based on the `renewables` percentage in the interval:
   - If `renewables >= 35%`: Use 100% `predicted` price.
   - If `renewables <= 25%`: Use 100% `high` price from the `advanced_price_predicted` dictionary.
-  - If `25% < renewables < 35%`: Linearly interpolate between the `predicted` and `high` prices.
+  - If `25% < renewables < 35%`: Linearly interpolate using independent percentage weights.
+    - Example: At `30%` renewables (which is exactly halfway between 35 and 25), the price is exactly `(0.5 * predicted) + (0.5 * high)`.
+    - Example: At `31%` renewables (which is 6/10ths of the way to 35 from 25), the price is `(0.6 * predicted) + (0.4 * high)`.
 - **FR-005**: `RatesManager` MUST correctly parse the `start_time` and `end_time` ISO strings from the Amber Express dictionary into native datetime objects.
 - **FR-006**: If the system is NOT in Amber Express mode, `RatesManager` MUST fall back to the existing parser behavior (e.g., standard HA arrays or fallback values).
 - **FR-007**: The system MUST handle cases where the `forecasts` attribute is intermittently missing or empty gracefully, reverting to a single fallback entry matching the current state.

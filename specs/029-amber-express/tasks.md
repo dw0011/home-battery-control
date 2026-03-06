@@ -15,7 +15,7 @@
 - [ ] In `rates.py::update`, branch to `self._parse_amber_express_entity` if the flag is true.
 - [ ] Create `rates.py::_parse_amber_express_entity(self, entity_id, label)`.
 - [ ] In `_parse_amber_express_entity`'s loop, extract `renewables`, `high`, and `predicted` keys from `advanced_price_predicted`.
-- [ ] Implement the `price = predicted + (ratio * (high - predicted))` blending logic if renewables falls between 25.0 and 35.0. 
+- [ ] Implement the `price = (ratio_predicted * predicted) + (ratio_high * high)` blending logic if renewables falls between 25.0 and 35.0. 
 - [ ] Port the Phase 8 5-minute chunking loop identically into `_parse_amber_express_entity`.
 - [ ] Ensure `rates.py` continues properly parsing the prices into the native 5-minute ticks.
 

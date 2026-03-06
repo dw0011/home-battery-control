@@ -68,9 +68,11 @@ The new configuration switch `CONF_USE_AMBER_EXPRESS` will be added to the Optio
       price = high_price
   else:
       # Linear interpolation between 35% and 25% (a 10% band)
-      # At 35, ratio = 0.0 (all predicted). At 25, ratio = 1.0 (all high).
-      ratio = (35.0 - renewables) / 10.0
-      price = predicted_price + (ratio * (high_price - predicted_price))
+      # e.g., at 30%, it is exactly 50% predicted + 50% high.
+      # e.g., at 31%, it is 60% predicted + 40% high.
+      ratio_predicted = (renewables - 25.0) / 10.0
+      ratio_high = 1.0 - ratio_predicted
+      price = (ratio_predicted * predicted_price) + (ratio_high * high_price)
   ```
 
 - Re-implement the Phase 8 loop (from the standard `_parse_entity`) identically inside `_parse_amber_express_entity` to ensure the dynamically calculated `price` is chunked into native 5-minute ticks.
