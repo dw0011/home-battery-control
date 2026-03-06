@@ -4,7 +4,9 @@
 **Status**: Draft
 
 ## Goal Description
-Integrate a new integration configuration toggle (`CONF_USE_AMBER_EXPRESS`) that switches `RatesManager` into an extraction mode capable of parsing Amber Express sensor dictionaries. Unlike the native Amber integration which creates dedicated "Forecast" entities, Amber Express embeds its entire 24-hour horizon inside the `forecasts` attribute array on the current price entity itself.
+Integrate a new integration configuration toggle (`CONF_USE_AMBER_EXPRESS`) that switches `RatesManager` into an extraction mode capable of parsing Amber Express sensor dictionaries. 
+
+Amber Express embeds its entire 24-hour horizon inside the `forecasts` attribute array on the current price entity itself. Furthermore, it includes `advanced_price_predicted` and `renewables` data. The system must linearly blend the price from `predicted` to `high` if renewables fall between 35% and 25%.
 
 ## User Review Required
 The new configuration switch `CONF_USE_AMBER_EXPRESS` will be added to the Options Flow (so existing users can toggle it without deleting the integration) and the Config Flow (so new setups can select it). Is placing this underneath the Price Entity selectors in the UI appropriate?
@@ -45,8 +47,26 @@ The new configuration switch `CONF_USE_AMBER_EXPRESS` will be added to the Optio
   if self._use_amber_express:
       raw_data = state.attributes.get("forecasts", [])
   ```
-- Currently, `_parse_entity` reads `interval.get("per_kwh")`. This exactly matches the Amber Express spec provided by the user (`per_kwh: -0.0637` and `per_kwh: 0.1124`).
-- Since Amber Express provides 30-minute chunks, the existing Phase 8 loop in `rates.py` (lines 102-119) will automatically chunk these 30-minute intervals into 5-minute ticks for the LP solver. This is a massive native win.
+- **Price Extraction and Blending (FR-003, FR-004)**: During the loop over `raw_data`, calculate the price dynamically.
+  - Extract `renewables = float(interval.get("renewables", 100.0))`
+  - Extract `advanced = interval.get("advanced_price_predicted", {})`
+  - `predicted_price = float(advanced.get("predicted", interval.get("per_kwh", 0.0)))`
+  - `high_price = float(advanced.get("high", predicted_price))`
+  
+  **Blending Math:**
+  ```python
+  if renewables >= 35.0:
+      price = predicted_price
+  elif renewables <= 25.0:
+      price = high_price
+  else:
+      # Linear interpolation between 35% and 25% (a 10% band)
+      # At 35, ratio = 0.0 (all predicted). At 25, ratio = 1.0 (all high).
+      ratio = (35.0 - renewables) / 10.0
+      price = predicted_price + (ratio * (high_price - predicted_price))
+  ```
+
+- Since Amber Express provides 30-minute chunks, the existing Phase 8 loop in `rates.py` (lines 102-119) will automatically chunk these newly calculated blended prices into 5-minute ticks for the LP solver.
 
 ## Verification Plan
 

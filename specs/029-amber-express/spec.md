@@ -3,7 +3,7 @@
 **Feature Branch**: `029-amber-express`  
 **Created**: 2026-03-07  
 **Status**: Draft  
-**Input**: User description: "Integrate support for Amber Express pricing sensors. Unlike standard Amber which provides separate forecast entities or relies on the Amber API, Amber Express embeds a 30-minute interval `forecasts` array directly inside the sensor attributes... The system needs a configuration switch to select 'Amber Express' mode vs 'Standard Amber' mode, and the `RatesManager` must be updated to parse this embedded attribute array when extracting future import and export prices."
+**Input**: User description: "Integrate support for Amber Express pricing sensors... The system needs a configuration switch to select 'Amber Express' mode... For pricing, use 'advanced_price_predicted.predicted' unless renewables < 35%, then blend predicted to high. All predicted at 35%, all high at 25% or below."
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -41,16 +41,20 @@ As a user with Amber Express pricing, I want the system to correctly predict fut
 
 - **FR-001**: The config/options flows MUST include a boolean configuration flag (`CONF_USE_AMBER_EXPRESS`) to toggle parsing behavior.
 - **FR-002**: When `CONF_USE_AMBER_EXPRESS` is True, `RatesManager` MUST attempt to read the `forecasts` array from the `attributes` of the primary Import and Export entities provided in the configuration.
-- **FR-003**: `RatesManager` MUST map the Amber Express `per_kwh` value to the primary `price` (Import) or `export_price` (Export) for each interval block found in the array.
-- **FR-004**: `RatesManager` MUST correctly parse the `start_time` and `end_time` ISO strings from the Amber Express dictionary into native datetime objects.
-- **FR-005**: If the system is NOT in Amber Express mode, `RatesManager` MUST fall back to the existing parser behavior (e.g., standard HA arrays or fallback values).
-- **FR-006**: The system MUST handle cases where the `forecasts` attribute is intermittently missing or empty gracefully, reverting to a single fallback entry matching the current state.
+- **FR-003**: `RatesManager` MUST extract the base price from `advanced_price_predicted.predicted` (falling back to `per_kwh` if the advanced dictionary is missing for the current half-hour block).
+- **FR-004**: `RatesManager` MUST apply a linear blend to the price based on the `renewables` percentage in the interval:
+  - If `renewables >= 35%`: Use 100% `predicted` price.
+  - If `renewables <= 25%`: Use 100% `high` price from the `advanced_price_predicted` dictionary.
+  - If `25% < renewables < 35%`: Linearly interpolate between the `predicted` and `high` prices.
+- **FR-005**: `RatesManager` MUST correctly parse the `start_time` and `end_time` ISO strings from the Amber Express dictionary into native datetime objects.
+- **FR-006**: If the system is NOT in Amber Express mode, `RatesManager` MUST fall back to the existing parser behavior (e.g., standard HA arrays or fallback values).
+- **FR-007**: The system MUST handle cases where the `forecasts` attribute is intermittently missing or empty gracefully, reverting to a single fallback entry matching the current state.
 
 ### Key Entities 
 
 - **Amber Express Sensor Attribute Structure**: 
   - `state`: current price float
-  - `attributes.forecasts`: List of dictionaries containing `start_time`, `end_time`, `per_kwh`.
+  - `attributes.forecasts`: List of dictionaries containing `start_time`, `end_time`, `per_kwh`, `renewables`, and an `advanced_price_predicted` dictionary (containing `low`, `predicted`, `high`).
 
 ## Success Criteria *(mandatory)*
 
