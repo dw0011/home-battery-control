@@ -236,6 +236,8 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
         weather: list[Any],
         current_soc: float,
         future_plan: list[dict[str, Any]],
+        current_price: float | None = None,
+        current_export_price: float | None = None,
     ) -> list[dict[str, Any]]:
         """Iterate over the rates timeline to unpack the FSM LP solver's execution path.
 
@@ -294,10 +296,10 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             price = rate.get("import_price", rate.get("price", 0.0))
             export_price = rate.get("export_price", price * 0.8)
 
-            if idx == 0 and getattr(self, "_current_price_kw", None) is not None:
-                price = self._current_price_kw
-                if getattr(self, "_current_export_price_kw", None) is not None:
-                    export_price = self._current_export_price_kw
+            if idx == 0 and current_price is not None:
+                price = current_price
+                if current_export_price is not None:
+                    export_price = current_export_price
                 else:
                     export_price = price * 0.8
 
@@ -741,6 +743,8 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     self.weather.get_forecast(),
                     soc,
                     future_plan,
+                    current_price,
+                    current_export_price,
                 ),
                 "cumulative_cost": round(self.cumulative_cost, 2),
                 "acquisition_cost": round(self.acquisition_cost, 4),
