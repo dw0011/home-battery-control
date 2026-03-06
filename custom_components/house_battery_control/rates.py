@@ -24,16 +24,22 @@ class RatesManager:
         hass: HomeAssistant,
         import_entity_id: str,
         export_entity_id: str,
+        use_amber_express: bool = False,
     ):
         self._hass = hass
         self._import_entity_id = import_entity_id
         self._export_entity_id = export_entity_id
+        self._use_amber_express = use_amber_express
         self._rates: List[RateInterval] = []
 
     def update(self) -> None:
         """Fetch latest rates from both import and export sensors."""
-        import_rates = self._parse_entity(self._import_entity_id, "import")
-        export_rates = self._parse_entity(self._export_entity_id, "export")
+        if self._use_amber_express:
+            import_rates = self._parse_amber_express_entity(self._import_entity_id, "import")
+            export_rates = self._parse_amber_express_entity(self._export_entity_id, "export")
+        else:
+            import_rates = self._parse_entity(self._import_entity_id, "import")
+            export_rates = self._parse_entity(self._export_entity_id, "export")
 
         # Merge by matching start times
         merged: dict[datetime, RateInterval] = {}
@@ -120,6 +126,75 @@ class RatesManager:
 
             except (ValueError, KeyError) as e:
                 _LOGGER.error(f"Error parsing {label} rate interval: {e}")
+                continue
+
+        parsed.sort(key=lambda x: x["start"])
+        return parsed
+
+    def _parse_amber_express_entity(self, entity_id: str, label: str) -> list:
+        """Parse rate intervals specifically from an Amber Express sensor's 'forecasts' array."""
+        state = self._hass.states.get(entity_id)
+        if not state:
+            _LOGGER.warning(f"Amber Express {label} price entity {entity_id} not found")
+            return []
+
+        # Amber Express explicitly embeds its 24h timeline inside the 'forecasts' attribute array
+        raw_data = state.attributes.get("forecasts", [])
+
+        if not raw_data:
+            _LOGGER.warning(f"No forecasts array in Amber Express entity {entity_id}")
+            return []
+
+        parsed = []
+        for interval in raw_data:
+            try:
+                start_ts = dt_util.parse_datetime(interval.get("start_time", ""))
+                end_ts = dt_util.parse_datetime(interval.get("end_time", ""))
+
+                if not start_ts or not end_ts:
+                    continue
+
+                # Ensure timezone-aware (spec 4: TZ safety)
+                start_ts = dt_util.as_utc(start_ts)
+                end_ts = dt_util.as_utc(end_ts)
+
+                renewables = float(interval.get("renewables", 100.0))
+                advanced = interval.get("advanced_price_predicted", {})
+                
+                predicted_price = float(advanced.get("predicted", interval.get("per_kwh", 0.0)))
+                high_price = float(advanced.get("high", predicted_price))
+
+                if renewables >= 35.0:
+                    price = predicted_price
+                elif renewables <= 25.0:
+                    price = high_price
+                else:
+                    # Linear interpolation between 35% and 25% (a 10% band)
+                    ratio_predicted = (renewables - 25.0) / 10.0
+                    ratio_high = 1.0 - ratio_predicted
+                    price = (ratio_predicted * predicted_price) + (ratio_high * high_price)
+
+                # Phase 8: Force chunking all intervals into 5-minute ticks
+                chunk_duration = timedelta(minutes=5)
+                current_ts = start_ts
+
+                while current_ts < end_ts:
+                    next_ts = current_ts + chunk_duration
+                    if next_ts > end_ts:
+                        next_ts = end_ts
+
+                    parsed.append(
+                        {
+                            "start": current_ts,
+                            "end": next_ts,
+                            "price": price,
+                            "type": "FORECAST", # Amber Express is purely forecast arrays
+                        }
+                    )
+                    current_ts = next_ts
+
+            except (ValueError, KeyError, TypeError) as e:
+                _LOGGER.error(f"Error parsing Amber Express {label} rate interval: {e}")
                 continue
 
         parsed.sort(key=lambda x: x["start"])

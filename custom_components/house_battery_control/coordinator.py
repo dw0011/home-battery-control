@@ -31,6 +31,7 @@ from .const import (
     CONF_LOAD_HIGH_TEMP_THRESHOLD,
     CONF_LOAD_LOW_TEMP_THRESHOLD,
     CONF_LOAD_CACHE_TTL,
+    CONF_USE_AMBER_EXPRESS,
     CONF_LOAD_POWER_ENTITY,
     CONF_LOAD_SENSITIVITY_HIGH_TEMP,
     CONF_LOAD_SENSITIVITY_LOW_TEMP,
@@ -102,6 +103,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             hass,
             config.get(CONF_IMPORT_PRICE_ENTITY, ""),
             config.get(CONF_EXPORT_PRICE_ENTITY, ""),
+            use_amber_express=config.get(CONF_USE_AMBER_EXPRESS, False),
         )
         self.weather = WeatherManager(hass, config.get(CONF_WEATHER_ENTITY, ""))
         self.load_predictor = LoadPredictor(hass)

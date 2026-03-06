@@ -11,6 +11,7 @@ CONF_GRID_ENTITY = "grid_entity"
 CONF_GRID_POWER_INVERT = "grid_power_invert"
 CONF_IMPORT_PRICE_ENTITY = "import_price_entity"
 CONF_EXPORT_PRICE_ENTITY = "export_price_entity"
+CONF_USE_AMBER_EXPRESS = "use_amber_express"
 CONF_CURRENT_IMPORT_PRICE_ENTITY = "current_import_price_entity"
 CONF_CURRENT_EXPORT_PRICE_ENTITY = "current_export_price_entity"
 CONF_WEATHER_ENTITY = "weather_entity"
@@ -67,6 +68,7 @@ DEFAULT_CURRENCY = "c/kWh"
 DEFAULT_SCAN_INTERVAL = 300
 # 5 minutes
 DEFAULT_LOAD_CACHE_TTL = 360  # 6 hours in minutes
+DEFAULT_USE_AMBER_EXPRESS = False
 DEFAULT_SOLCAST_TODAY = "sensor.solcast_pv_forecast_today"
 DEFAULT_SOLCAST_TOMORROW = "sensor.solcast_pv_forecast_tomorrow"
 
