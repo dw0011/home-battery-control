@@ -236,8 +236,6 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
         weather: list[Any],
         current_soc: float,
         future_plan: list[dict[str, Any]],
-        current_price: float | None = None,
-        current_export_price: float | None = None,
     ) -> list[dict[str, Any]]:
         """Iterate over the rates timeline to unpack the FSM LP solver's execution path.
 
@@ -290,21 +288,11 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             # FSM Constants
             capacity = self.config.get(CONF_BATTERY_CAPACITY, 27.0)
 
-            # --- 4. Determine Interval Prices ---
-            # Use raw unaltered rates from the timeline for accurate UI reflection,
-            # but apply the live price override for step 0 so the UI matches the LP solver's inputs.
+            # --- 4. Default Interval Prices (fallback) ---
             price = rate.get("import_price", rate.get("price", 0.0))
             export_price = rate.get("export_price", price * 0.8)
 
-            if idx == 0 and current_price is not None:
-                price = current_price
-                if current_export_price is not None:
-                    export_price = current_export_price
-                else:
-                    export_price = price * 0.8
-
             # --- 5. Map LP Solver Plan via Array Index ---
-
             if future_plan and 0 <= idx < len(future_plan):
                 state = future_plan[idx].get("state", "UNKNOWN")
                 target_soc = future_plan[idx].get("target_soc", simulated_soc)
@@ -313,9 +301,11 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 load_kw_avg = future_plan[idx].get("load", 0.0)
                 acq_cost = future_plan[idx].get("acquisition_cost", 0.0)
 
-                # Use the FSM's computationally precise Net Grid value natively without overriding it.
-                # (The continuous degenerate constraint bug in lin_fsm.py has been resolved).
+                # Feature 028: Use exact prices from the solver, ignoring independent lookups
+                price = future_plan[idx].get("import_price", price)
+                export_price = future_plan[idx].get("export_price", export_price)
 
+                # Use the FSM's computationally precise Net Grid value natively without overriding it.
                 if net_grid_kw > 0:
                     interval_cost = net_grid_kw * duration_hours * price
                 else:
@@ -743,8 +733,6 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     self.weather.get_forecast(),
                     soc,
                     future_plan,
-                    current_price,
-                    current_export_price,
                 ),
                 "cumulative_cost": round(self.cumulative_cost, 2),
                 "acquisition_cost": round(self.acquisition_cost, 4),

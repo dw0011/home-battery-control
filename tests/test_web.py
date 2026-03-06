@@ -378,9 +378,9 @@ def test_plan_table_extracts_rates_and_power_from_plan():
     assert row_5m["Load Forecast"] == "1.00"
     assert row_30m["Load Forecast"] == "3.00"
 
-    # 4. Extract Rates directly from future_plan timeline reflection fallback
-    assert row_5m["Export Rate"] == "8.00"
-    assert row_30m["Export Rate"] == "9.60"
+    # 4. Extract Rates directly from future_plan
+    assert row_5m["Export Rate"] == "5.00"
+    assert row_30m["Export Rate"] == "8.00"
 
 
 # --- API Status ---
