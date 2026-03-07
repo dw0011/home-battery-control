@@ -93,6 +93,8 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
         self.acquisition_cost: float = 0.10
         self.store = Store(hass, 1, "house_battery_control.cost_data")
         self._costs_loaded = False
+        self._last_saved_cumulative: float = 0.0
+        self._last_saved_acquisition: float = 0.10
 
         # Feature 027: Debug replay snapshot
         self._solver_snapshot: dict | None = None
@@ -151,6 +153,8 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             else:
                 self.cumulative_cost = 0.0
                 self.acquisition_cost = 0.10
+            self._last_saved_cumulative = self.cumulative_cost
+            self._last_saved_acquisition = self.acquisition_cost
         finally:
             self._costs_loaded = True
 
@@ -669,32 +673,26 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             self.dp_target_soc = getattr(fsm_result, "target_soc", None)
 
             # --- Update historical cost trackers based on immediate 5min interval ---
-            interval_cost = 0.0
             future_plan = fsm_result.future_plan or []
-            rates_list = self.rates.get_rates()
-
-            old_cumulative = self.cumulative_cost
-            old_acquisition = self.acquisition_cost
-
-            if self._costs_loaded and future_plan and rates_list:
-                f_net_grid = future_plan[0].get("net_grid", 0.0)
-                price = rates_list[0].get("import_price", rates_list[0].get("price", 0.0))
-                export_price = rates_list[0].get("export_price", price * 0.8)
-
-                if f_net_grid > 0:
-                    interval_cost = f_net_grid * price * (5 / 60)
-                else:
-                    interval_cost = f_net_grid * export_price * (5 / 60)
-
-                self.cumulative_cost += interval_cost
+            if self._costs_loaded and future_plan:
+                # Direct solver passthrough (BUG-030 follow-up)
+                solver_cum_cost = future_plan[0].get("cumulative_cost")
+                if solver_cum_cost is not None:
+                    self.cumulative_cost = float(solver_cum_cost)
 
                 # NOTE: acquisition_cost is NOT synced from solver plan.
                 # The solver's running_cost starts from terminal_valuation
                 # (which floors via max()), creating a feedback loop (BUG-025A).
                 # acquisition_cost is a coordinator-level tracked value.
 
-            # Save to persistent storage if values drifted during this tick
-            if self._costs_loaded and (abs(self.cumulative_cost - old_cumulative) > 0.0001 or abs(self.acquisition_cost - old_acquisition) > 0.0001):
+            # Save to persistent storage if values drifted significantly since last save
+            cost_drift = abs(self.cumulative_cost - self._last_saved_cumulative)
+            acq_drift = abs(self.acquisition_cost - self._last_saved_acquisition)
+
+            if self._costs_loaded and (cost_drift >= 0.01 or acq_drift >= 0.0001):
+                self._last_saved_cumulative = self.cumulative_cost
+                self._last_saved_acquisition = self.acquisition_cost
+                
                 self.store.async_delay_save(
                     lambda: {
                         "cumulative_cost": self.cumulative_cost,

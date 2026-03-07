@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "minor_version": 1,
+  "key": "hbc.cost_data",
+  "data": {
+    "cumulative_cost": 2.5,
+    "acquisition_cost": 0.1
+  }
+}
