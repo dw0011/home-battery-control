@@ -92,6 +92,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
         self.cumulative_cost: float = 0.0
         self.acquisition_cost: float = 0.10
         self.store = Store(hass, 1, "house_battery_control.cost_data")
+        self._costs_loaded = False
 
         # Feature 027: Debug replay snapshot
         self._solver_snapshot: dict | None = None
@@ -142,13 +143,16 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def async_load_stored_costs(self) -> None:
         """Load persistent cost data from the .storage directory."""
-        data = await self.store.async_load()
-        if data:
-            self.cumulative_cost = data.get("cumulative_cost", 0.0)
-            self.acquisition_cost = data.get("acquisition_cost", 0.10)
-        else:
-            self.cumulative_cost = 0.0
-            self.acquisition_cost = 0.10
+        try:
+            data = await self.store.async_load()
+            if data:
+                self.cumulative_cost = data.get("cumulative_cost", 0.0)
+                self.acquisition_cost = data.get("acquisition_cost", 0.10)
+            else:
+                self.cumulative_cost = 0.0
+                self.acquisition_cost = 0.10
+        finally:
+            self._costs_loaded = True
 
         # One-shot acquisition cost override from config options
         from .const import CONF_ACQ_COST_OVERRIDE, CONF_ACQ_COST_OVERRIDE_VALUE
@@ -672,7 +676,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             old_cumulative = self.cumulative_cost
             old_acquisition = self.acquisition_cost
 
-            if future_plan and rates_list:
+            if self._costs_loaded and future_plan and rates_list:
                 f_net_grid = future_plan[0].get("net_grid", 0.0)
                 price = rates_list[0].get("import_price", rates_list[0].get("price", 0.0))
                 export_price = rates_list[0].get("export_price", price * 0.8)
@@ -690,7 +694,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 # acquisition_cost is a coordinator-level tracked value.
 
             # Save to persistent storage if values drifted during this tick
-            if abs(self.cumulative_cost - old_cumulative) > 0.0001 or abs(self.acquisition_cost - old_acquisition) > 0.0001:
+            if self._costs_loaded and (abs(self.cumulative_cost - old_cumulative) > 0.0001 or abs(self.acquisition_cost - old_acquisition) > 0.0001):
                 self.store.async_delay_save(
                     lambda: {
                         "cumulative_cost": self.cumulative_cost,
