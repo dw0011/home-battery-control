@@ -18,7 +18,7 @@ Every 5 minutes, HBC collects your current energy tariffs, solar production fore
 |---|---|---|
 | **Home Assistant** 2024.1+ | Platform | — |
 | **HACS** | Installation | [hacs.xyz](https://hacs.xyz) |
-| **Amber Electric** | 5-minute spot pricing | [Amber Electric](https://www.home-assistant.io/integrations/amber/) |
+| **Amber Electric** | 5-minute spot pricing (Supports Standard & Amber Express) | [Amber Electric](https://www.home-assistant.io/integrations/amber/) |
 | **Solcast** | Solar production forecast | [Solcast HACS](https://github.com/oziee/ha-solcast-solar) |
 | **Tesla Powerwall** | Battery control | [Teslemetry](https://github.com/Teslemetry/ha-teslemetry) or similar |
 | **Weather** | Temperature forecast (optional) | Any HA weather entity |
@@ -75,7 +75,7 @@ After configuration:
 
 ```bash
 pip install -r requirements_test.txt
-python -m pytest tests/ -v      # 133 tests
+python -m pytest tests/ -v      # 213 tests
 ruff check custom_components/ tests/
 ```
 
