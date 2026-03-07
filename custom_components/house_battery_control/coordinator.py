@@ -610,6 +610,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     "no_import_periods": self.config.get(CONF_NO_IMPORT_PERIODS, ""),
                 },
                 acquisition_cost=self.acquisition_cost,
+                cumulative_cost=self.cumulative_cost,
                 current_export_price=current_export_price,
                 solver_inputs=self._build_solver_inputs(
                     rates_list=self.rates.get_rates(),

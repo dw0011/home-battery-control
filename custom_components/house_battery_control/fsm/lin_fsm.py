@@ -112,6 +112,7 @@ class LinearBatteryController:
         load_forecast: list[float],
         pv_forecast: list[float],
         acquisition_cost: float = 0.0,
+        cumulative_cost: float = 0.0,
         reserve_soc: float = 0.0,
         no_import_steps: set[int] | None = None,
     ):
@@ -228,7 +229,7 @@ class LinearBatteryController:
         # --- Build 288-step future plan sequence ---
         running_capacity = battery.current_charge
         running_cost = acquisition_cost
-        running_cum_cost = 0.0
+        running_cum_cost = cumulative_cost
         soc_correction = 0.0  # BUG-025B: accumulate energy retained by gate
         sequence = []
 
@@ -356,6 +357,7 @@ class LinearBatteryStateMachine(BatteryStateMachine):
                     load_forecast=load_f,
                     pv_forecast=pv_f,
                     acquisition_cost=context.acquisition_cost,
+                    cumulative_cost=context.cumulative_cost,
                     reserve_soc=float(context.config.get("reserve_soc", 0.0)),
                     no_import_steps=no_import_steps if no_import_steps else None,
                 )

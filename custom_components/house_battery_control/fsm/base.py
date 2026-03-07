@@ -25,6 +25,7 @@ class FSMContext:
     forecast_price: list[Any]  # Next 24h
     config: dict[str, Any]  # System config constraints
     acquisition_cost: float = 0.0  # c/kWh, Default 0.0
+    cumulative_cost: float = 0.0  # $, Default 0.0
     current_export_price: float = 0.0  # c/kWh, explicitly passed for t=0
     solver_inputs: SolverInputs | None = None  # Pre-built arrays for LP solver
 
