@@ -95,6 +95,10 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
         self._costs_loaded = False
         self._last_saved_cumulative: float = 0.0
         self._last_saved_acquisition: float = 0.10
+        self._last_update_time = None
+        self._last_grid_power = 0.0
+        self._last_buy_price = 0.0
+        self._last_sell_price = 0.0
 
         # Feature 027: Debug replay snapshot
         self._solver_snapshot: dict | None = None
@@ -672,18 +676,44 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             # Store native DP target SOC state
             self.dp_target_soc = getattr(fsm_result, "target_soc", None)
 
-            # --- Update historical cost trackers based on immediate 5min interval ---
             future_plan = fsm_result.future_plan or []
-            if self._costs_loaded and future_plan:
-                # Direct solver passthrough (BUG-030 follow-up)
-                solver_cum_cost = future_plan[0].get("cumulative_cost")
-                if solver_cum_cost is not None:
-                    self.cumulative_cost = float(solver_cum_cost)
 
-                # NOTE: acquisition_cost is NOT synced from solver plan.
-                # The solver's running_cost starts from terminal_valuation
-                # (which floors via max()), creating a feedback loop (BUG-025A).
-                # acquisition_cost is a coordinator-level tracked value.
+            # --- Update historical cost trackers based on real elapsed time ---
+            now = dt_util.utcnow()
+            
+            if self._costs_loaded and self._last_update_time is not None:
+                delta_time = now - self._last_update_time
+                delta_hours = delta_time.total_seconds() / 3600.0
+                
+                # Cap delta to 2 hours to prevent massive spikes if HA was turned off and just booted
+                if 0 < delta_hours < 2.0:
+                    g_power = self._last_grid_power
+                    
+                    if g_power > 0:
+                        interval_cost = g_power * self._last_buy_price * delta_hours
+                    else:
+                        interval_cost = g_power * self._last_sell_price * delta_hours
+                        
+                    self.cumulative_cost += interval_cost
+
+            # Capture current states for the next interval calculation
+            self._last_update_time = now
+            self._last_grid_power = grid_p
+            
+            rates_list = self.rates.get_rates()
+            if rates_list:
+                price = rates_list[0].get("import_price", rates_list[0].get("price", 0.0))
+                export_price = rates_list[0].get("export_price", price * 0.8)
+                self._last_buy_price = price
+                self._last_sell_price = export_price
+            else:
+                self._last_buy_price = 0.0
+                self._last_sell_price = 0.0
+
+            # NOTE: acquisition_cost is NOT synced from solver plan.
+            # The solver's running_cost starts from terminal_valuation
+            # (which floors via max()), creating a feedback loop (BUG-025A).
+            # acquisition_cost is a coordinator-level tracked value.
 
             # Save to persistent storage if values drifted significantly since last save
             cost_drift = abs(self.cumulative_cost - self._last_saved_cumulative)
