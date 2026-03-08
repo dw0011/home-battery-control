@@ -22,6 +22,10 @@ CONF_LOAD_TODAY_ENTITY = "load_today_entity"
 CONF_IMPORT_TODAY_ENTITY = "import_today_entity"
 CONF_EXPORT_TODAY_ENTITY = "export_today_entity"
 
+# Telemetry Cost Tracker Keys
+CONF_TRACKER_IMPORT_PRICE = "tracker_import_price"
+CONF_TRACKER_EXPORT_PRICE = "tracker_export_price"
+
 # Load Prediction Calibrations
 CONF_LOAD_SENSITIVITY_HIGH_TEMP = "load_high_temp_sensitivity"  # kW per deg above threshold
 CONF_LOAD_SENSITIVITY_LOW_TEMP = "load_low_temp_sensitivity"  # kW per deg below threshold

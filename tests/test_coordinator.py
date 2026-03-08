@@ -244,7 +244,9 @@ def test_coordinator_tracks_state_changes_on_init():
         patch("custom_components.house_battery_control.coordinator.DataUpdateCoordinator.__init__", return_value=None),
         patch("custom_components.house_battery_control.coordinator.Store")
     ):
-        coordinator = HBCDataUpdateCoordinator(mock_hass, "entry123", config)
+        mock_tracker = MagicMock()
+        mock_tracker.cumulative_cost = 0.0
+        coordinator = HBCDataUpdateCoordinator(mock_hass, "entry123", config, mock_tracker)
         coordinator.hass = mock_hass
 
         # Test that async_track_state_change_event was called to register listeners
@@ -292,7 +294,9 @@ def test_coordinator_rounded_outputs():
         patch("custom_components.house_battery_control.coordinator.DataUpdateCoordinator.__init__", return_value=None),
         patch("custom_components.house_battery_control.coordinator.Store")
     ):
-        coordinator = HBCDataUpdateCoordinator(mock_hass, "entry123", config)
+        mock_tracker = MagicMock()
+        mock_tracker.cumulative_cost = 0.0
+        coordinator = HBCDataUpdateCoordinator(mock_hass, "entry123", config, mock_tracker)
         coordinator.hass = mock_hass
         coordinator._update_count = 0
         coordinator.rates = MagicMock()
@@ -408,7 +412,9 @@ async def test_coordinator_update_data_exception_recovery(mock_hass):
         patch("custom_components.house_battery_control.coordinator.DataUpdateCoordinator.__init__", return_value=None),
         patch("custom_components.house_battery_control.coordinator.Store")
     ):
-        coordinator = HBCDataUpdateCoordinator(mock_hass, "entry123", config)
+        mock_tracker = MagicMock()
+        mock_tracker.cumulative_cost = 0.0
+        coordinator = HBCDataUpdateCoordinator(mock_hass, "entry123", config, mock_tracker)
         coordinator.hass = mock_hass
         coordinator._update_count = 0
         coordinator.rates = MagicMock()
@@ -506,10 +512,10 @@ async def test_coordinator_load_stored_costs_empty(mock_hass):
             patch("custom_components.house_battery_control.coordinator.async_track_state_change_event"),
             patch("custom_components.house_battery_control.coordinator.DataUpdateCoordinator.__init__", return_value=None)
         ):
-            coordinator = HBCDataUpdateCoordinator(mock_hass, "entry123", {})
+            mock_tracker = MagicMock()
+            coordinator = HBCDataUpdateCoordinator(mock_hass, "entry123", {}, mock_tracker)
             await coordinator.async_load_stored_costs()
 
-            assert coordinator.cumulative_cost == 0.0
             assert coordinator.acquisition_cost == 0.10
 
 
@@ -533,10 +539,10 @@ async def test_coordinator_load_stored_costs_valid(mock_hass):
             patch("custom_components.house_battery_control.coordinator.async_track_state_change_event"),
             patch("custom_components.house_battery_control.coordinator.DataUpdateCoordinator.__init__", return_value=None)
         ):
-            coordinator = HBCDataUpdateCoordinator(mock_hass, "entry123", {})
+            mock_tracker = MagicMock()
+            coordinator = HBCDataUpdateCoordinator(mock_hass, "entry123", {}, mock_tracker)
             await coordinator.async_load_stored_costs()
 
-            assert coordinator.cumulative_cost == 5.42
             assert coordinator.acquisition_cost == 0.12
 
 
@@ -563,11 +569,9 @@ class TestAcqCostSolverSync:
             export_price = rates_list[0].get("export_price", price * 0.8)
 
             if f_net_grid > 0:
-                interval_cost = f_net_grid * price * (5 / 60)
+                _ = f_net_grid * price * (5 / 60)
             else:
-                interval_cost = f_net_grid * export_price * (5 / 60)
-
-            coordinator.cumulative_cost += interval_cost
+                _ = f_net_grid * export_price * (5 / 60)
 
             # acquisition_cost is NOT synced from solver plan (BUG-025A fix)
 
@@ -629,27 +633,6 @@ class TestAcqCostSolverSync:
 
         assert first_value == second_value == 0.10, (
             f"Expected idempotent 0.10, got first={first_value}, second={second_value}"
-        )
-
-    def test_cumulative_cost_unchanged(self):
-        """T04 (FR-006): Cumulative cost tracker must still work correctly."""
-        coord = self._make_coordinator(acq_cost=0.10)
-        future_plan = [
-            {
-                "net_grid": 2.0,  # importing 2kW
-                "pv": 0.0,
-                "load": 2.0,
-                "acquisition_cost": 0.135,
-            }
-        ]
-        rates = [{"import_price": 30.0, "export_price": 5.0}]
-
-        self._run_cost_tracker(coord, future_plan, rates)
-
-        # cumulative_cost should be net_grid * price * (5/60) = 2.0 * 30.0 * (5/60) = 5.0
-        expected_cumulative = 2.0 * 30.0 * (5 / 60)
-        assert abs(coord.cumulative_cost - expected_cumulative) < 0.001, (
-            f"Expected cumulative {expected_cumulative}, got {coord.cumulative_cost}"
         )
 
 

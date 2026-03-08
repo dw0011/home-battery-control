@@ -1,6 +1,9 @@
 import asyncio
 import os
-import sys
+from enum import Enum
+
+from homeassistant.helpers.storage import Store
+
 
 # Minimal mock of Home Assistant classes needed to test Store
 class MockConfig:
@@ -14,7 +17,6 @@ class MockBus:
     def async_listen_once(self, *args, **kwargs):
         return lambda: None
 
-from enum import Enum
 class CoreState(Enum):
     not_running = 0
     starting = 1
@@ -36,26 +38,24 @@ class MockHass:
         return self.loop.run_in_executor(None, target, *args)
 
 # We need to simulate the exact async_delay_save behaviour from HA
-from homeassistant.helpers.storage import Store
-from collections import deque
 
 async def test_store_save_loop():
     hass = MockHass()
-    
+
     # Store creates files in config/.storage
     os.makedirs(".storage", exist_ok=True)
     hass.config.config_dir = "."
-    
+
     store = Store(hass, 1, "hbc.cost_data")
-    
+
     print("1. Initial load:", await store.async_load())
-    
+
     cumulative_cost = 0.0
     acquisition_cost = 0.10
-    
-    print(f"2. Simulating tick 1: Adding $2.50 to cost")
+
+    print("2. Simulating tick 1: Adding $2.50 to cost")
     cumulative_cost += 2.50
-    
+
     # Simulate exactly what coordinator.py does:
     store.async_delay_save(
         lambda: {
@@ -64,14 +64,14 @@ async def test_store_save_loop():
         },
         delay=0.1
     )
-    
-    print(f"3. Waiting for delay_save to fire...")
+
+    print("3. Waiting for delay_save to fire...")
     await asyncio.sleep(0.5)
-    
+
     # Now simulate a reboot (new Store instance reading from disk)
     store2 = Store(hass, 1, "hbc.cost_data")
     loaded = await store2.async_load()
     print("4. Loaded after reboot:", loaded)
-    
+
 if __name__ == "__main__":
     asyncio.run(test_store_save_loop())

@@ -63,6 +63,7 @@ from .fsm.lin_fsm import (
 from .load import LoadPredictor
 from .rates import RatesManager
 from .solar.solcast import SolcastSolar
+from .telemetry_tracker import TelemetryCostTracker
 from .weather import WeatherManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -76,6 +77,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
         hass: HomeAssistant,
         entry_id: str,
         config: dict[str, Any],
+        telemetry_tracker: TelemetryCostTracker,
     ) -> None:
         """Initialize."""
         super().__init__(
@@ -86,14 +88,13 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
         )
         self.entry_id = entry_id
         self.config = config
+        self.telemetry_tracker = telemetry_tracker
         self._update_count = 0
         self.dp_target_soc = None
 
-        self.cumulative_cost: float = 0.0
         self.acquisition_cost: float = 0.10
         self.store = Store(hass, 1, "house_battery_control.cost_data")
         self._costs_loaded = False
-        self._last_saved_cumulative: float = 0.0
         self._last_saved_acquisition: float = 0.10
         self._last_update_time = None
         self._last_grid_power = 0.0
@@ -147,17 +148,20 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 hass, self._tracked_entities, self._async_on_state_change
             )
 
+    @property
+    def cumulative_cost(self) -> float:
+        """Get the isolated cumulative cost from the telemetry tracker."""
+        return self.telemetry_tracker.cumulative_cost
+
     async def async_load_stored_costs(self) -> None:
         """Load persistent cost data from the .storage directory."""
         try:
             data = await self.store.async_load()
             if data:
-                self.cumulative_cost = data.get("cumulative_cost", 0.0)
+                # The Store legacy payload might still have 'cumulative_cost', but we only care about acquisition now
                 self.acquisition_cost = data.get("acquisition_cost", 0.10)
             else:
-                self.cumulative_cost = 0.0
                 self.acquisition_cost = 0.10
-            self._last_saved_cumulative = self.cumulative_cost
             self._last_saved_acquisition = self.acquisition_cost
         finally:
             self._costs_loaded = True
@@ -174,7 +178,6 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             # Persist immediately
             self.store.async_delay_save(
                 lambda: {
-                    "cumulative_cost": self.cumulative_cost,
                     "acquisition_cost": self.acquisition_cost,
                 },
                 60,
@@ -680,26 +683,11 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
 
             # --- Update historical cost trackers based on real elapsed time ---
             now = dt_util.utcnow()
-            
-            if self._costs_loaded and self._last_update_time is not None:
-                delta_time = now - self._last_update_time
-                delta_hours = delta_time.total_seconds() / 3600.0
-                
-                # Cap delta to 2 hours to prevent massive spikes if HA was turned off and just booted
-                if 0 < delta_hours < 2.0:
-                    g_power = self._last_grid_power
-                    
-                    if g_power > 0:
-                        interval_cost = g_power * self._last_buy_price * delta_hours
-                    else:
-                        interval_cost = g_power * self._last_sell_price * delta_hours
-                        
-                    self.cumulative_cost += interval_cost
 
             # Capture current states for the next interval calculation
             self._last_update_time = now
             self._last_grid_power = grid_p
-            
+
             rates_list = self.rates.get_rates()
             if rates_list:
                 price = rates_list[0].get("import_price", rates_list[0].get("price", 0.0))
@@ -716,16 +704,13 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             # acquisition_cost is a coordinator-level tracked value.
 
             # Save to persistent storage if values drifted significantly since last save
-            cost_drift = abs(self.cumulative_cost - self._last_saved_cumulative)
             acq_drift = abs(self.acquisition_cost - self._last_saved_acquisition)
 
-            if self._costs_loaded and (cost_drift >= 0.01 or acq_drift >= 0.0001):
-                self._last_saved_cumulative = self.cumulative_cost
+            if self._costs_loaded and acq_drift >= 0.0001:
                 self._last_saved_acquisition = self.acquisition_cost
-                
+
                 self.store.async_delay_save(
                     lambda: {
-                        "cumulative_cost": self.cumulative_cost,
                         "acquisition_cost": self.acquisition_cost
                     },
                     delay=1.0

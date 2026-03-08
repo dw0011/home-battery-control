@@ -58,6 +58,8 @@ from .const import (
     CONF_SOLAR_ENTITY,
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
+    CONF_TRACKER_EXPORT_PRICE,
+    CONF_TRACKER_IMPORT_PRICE,
     CONF_USE_AMBER_EXPRESS,
     CONF_WEATHER_ENTITY,
     DEFAULT_BATTERY_CAPACITY,
@@ -160,7 +162,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Step 2: Energy & Metrics (Cumulative)."""
         if user_input is not None:
             self._data.update(user_input)
-            return await self.async_step_control()
+            return await self.async_step_cost_tracking()
 
         return self.async_show_form(
             step_id="energy",
@@ -236,10 +238,32 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
         )
 
+    async def async_step_cost_tracking(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Step 3: Cost Tracking (Optional)."""
+        if user_input is not None:
+            self._data.update(user_input)
+            return await self.async_step_control()
+
+        return self.async_show_form(
+            step_id="cost_tracking",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_TRACKER_IMPORT_PRICE): EntitySelector(
+                        EntitySelectorConfig(domain="sensor")
+                    ),
+                    vol.Optional(CONF_TRACKER_EXPORT_PRICE): EntitySelector(
+                        EntitySelectorConfig(domain="sensor")
+                    ),
+                }
+            ),
+        )
+
     async def async_step_control(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Step 3: Control Services (Optional — skip for debug mode)."""
+        """Step 4: Control Services (Optional — skip for debug mode)."""
         if user_input is not None:
             # If skip is checked, create entry without control entities
             if user_input.get("skip_control", False):
@@ -299,7 +323,7 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
         """Manage the options."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["manual", "energy", "control"],
+            menu_options=["manual", "energy", "cost_tracking", "control"],
         )
 
     async def async_step_manual(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -478,6 +502,31 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
                     ): NumberSelector(
                         NumberSelectorConfig(min=0, max=1, step=0.001, mode=NumberSelectorMode.BOX)
                     ),
+                }
+            ),
+        )
+
+    async def async_step_cost_tracking(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Update Cost Tracking (Optional)."""
+        if user_input is not None:
+            self._data.update(user_input)
+            self.hass.config_entries.async_update_entry(self.config_entry, data=self._data)
+            return self.async_create_entry(title="", data={})
+
+        return self.async_show_form(
+            step_id="cost_tracking",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_TRACKER_IMPORT_PRICE,
+                        description={"suggested_value": self._data.get(CONF_TRACKER_IMPORT_PRICE)},
+                    ): EntitySelector(EntitySelectorConfig(domain="sensor")),
+                    vol.Optional(
+                        CONF_TRACKER_EXPORT_PRICE,
+                        description={"suggested_value": self._data.get(CONF_TRACKER_EXPORT_PRICE)},
+                    ): EntitySelector(EntitySelectorConfig(domain="sensor")),
                 }
             ),
         )

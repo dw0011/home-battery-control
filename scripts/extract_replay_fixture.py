@@ -75,4 +75,4 @@ fixture = {
 
 with open("API Data/solver_replay_fixture.json", "w") as out:
     json.dump(fixture, out, indent=2)
-print(f"\n=== Fixture saved to API Data/solver_replay_fixture.json ===")
+print("\n=== Fixture saved to API Data/solver_replay_fixture.json ===")

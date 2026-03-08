@@ -6,9 +6,10 @@ Purpose: Isolate whether row-0 CHARGE_GRID is caused by the removed
 post-solve binary search smoother from the original 1st Place solver.
 """
 import json
-import sys
-import numpy as np
 import statistics
+import sys
+
+import numpy as np
 from scipy.optimize import linprog
 
 
@@ -198,7 +199,7 @@ def replay(path: str):
         else:
             # The smoother redistributes evenly
             per_step = sum_charge / n if n > 0 else 0
-            smoothed_c0 = min(charge_limit, max(-(-1) - energy[0], 0))  # simplified
+            _ = min(charge_limit, max(-(-1) - energy[0], 0))  # simplified
             smoothed_b1 = current + min(charge_limit, max(sum_charge / n if n > 0 else 0, 0)) * eta_in
             print(f"Smoother would redistribute {sum_charge:.6f} kWh across {n} steps")
             print(f"Per-step charge: {per_step:.6f} kWh")

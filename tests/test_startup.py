@@ -50,7 +50,11 @@ async def test_coordinator_refreshes_on_ha_start():
         with (
             patch("homeassistant.components.http.StaticPathConfig"),
             patch("homeassistant.components.frontend.async_register_built_in_panel"),
+            patch("custom_components.house_battery_control.TelemetryCostTracker") as mock_tracker_class,
         ):
+            mock_tracker = AsyncMock()
+            mock_tracker_class.return_value = mock_tracker
+
             await async_setup_entry(hass, mock_entry)
 
         # 4. Verify EVENT_HOMEASSISTANT_STARTED listener was registered
