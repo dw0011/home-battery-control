@@ -317,6 +317,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 pv_kw_avg = future_plan[idx].get("pv", 0.0)
                 load_kw_avg = future_plan[idx].get("load", 0.0)
                 acq_cost = future_plan[idx].get("acquisition_cost", 0.0)
+                cum_cost = future_plan[idx].get("cumulative_cost", 0.0)
 
                 # Feature 028: Use exact prices from the solver, ignoring independent lookups
                 price = future_plan[idx].get("import_price", price)
@@ -335,6 +336,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 pv_kw_avg = 0.0
                 load_kw_avg = 0.0
                 acq_cost = 0.0
+                cum_cost = cumulative
 
                 # --- 6. Fallback Battery Physics ---
                 soc_delta = target_soc - simulated_soc
@@ -357,7 +359,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
 
             limit_pct = 100.0 if state != "SELF_CONSUMPTION" else 0.0
 
-            cumulative += interval_cost
+            cumulative = cum_cost if 'cum_cost' in locals() else cumulative + interval_cost
 
             table.append(
                 {
@@ -382,6 +384,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     "SoC Forecast": f"{target_soc:.1f}%",
                     "Interval Cost": f"${interval_cost:.4f}",
                     "Cumul. Cost": f"${cumulative:.4f}",
+                    "cumulative_cost": cumulative,
                     "Acq. Cost": f"{acq_cost:.4f}",
                 }
             )
