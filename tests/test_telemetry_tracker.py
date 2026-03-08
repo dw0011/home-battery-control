@@ -54,9 +54,9 @@ async def test_tick_standard_accumulation(mock_store_class, mock_config):
         elif entity_id == "sensor.export_kwh":
             state.state = "5.2"  # 0.2 kWh exported
         elif entity_id == "sensor.amber_import":
-            state.attributes = {"raw": 0.20} # 20c per kWh
+            state.state = "0.20" # 20c per kWh
         elif entity_id == "sensor.amber_export":
-            state.attributes = {"raw": 0.10} # 10c per kWh (feed-in)
+            state.state = "0.10" # 10c per kWh (feed-in)
         else:
             return None
         return state
@@ -100,9 +100,9 @@ async def test_midnight_reset_interpolation(mock_store_class, mock_config):
         elif entity_id == "sensor.export_kwh":
             state.state = "0.0" # Reset happened, now at 0.0
         elif entity_id == "sensor.amber_import":
-            state.attributes = {"raw": 0.50}
+            state.state = "0.50"
         elif entity_id == "sensor.amber_export":
-            state.attributes = {"raw": -0.10}
+            state.state = "-0.10"
         return state
 
     hass.states.get.side_effect = mock_get_state

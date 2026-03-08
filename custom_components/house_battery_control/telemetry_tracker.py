@@ -100,11 +100,11 @@ class TelemetryCostTracker:
             _LOGGER.warning("TelemetryCostTracker skip: kWh values non-numeric.")
             return
 
-        # Handle Prices & Gap Resiliency (Spec: Use attributes.raw)
+        # Handle Prices & Gap Resiliency
         current_price_imp = None
-        if state_price_imp.state not in ("unavailable", "unknown") and "raw" in state_price_imp.attributes:
+        if state_price_imp.state not in ("unavailable", "unknown"):
             try:
-                current_price_imp = float(state_price_imp.attributes["raw"])
+                current_price_imp = float(state_price_imp.state)
                 self._last_price_import = current_price_imp
             except ValueError:
                 pass
@@ -117,9 +117,9 @@ class TelemetryCostTracker:
                 return
 
         current_price_exp = None
-        if state_price_exp.state not in ("unavailable", "unknown") and "raw" in state_price_exp.attributes:
+        if state_price_exp.state not in ("unavailable", "unknown"):
             try:
-                current_price_exp = float(state_price_exp.attributes["raw"])
+                current_price_exp = float(state_price_exp.state)
                 self._last_price_export = current_price_exp
             except ValueError:
                 pass

@@ -1,0 +1,12 @@
+fetch("/hbc/api/status", {
+  headers: {"Authorization": "Bearer " + document.querySelector("home-assistant").hass.auth.data.access_token}
+})
+.then(r => r.json())
+.then(d => {
+  const blob = new Blob([JSON.stringify(d, null, 2)], {type: "application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `hbc_status_${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+  a.click();
+})
+
