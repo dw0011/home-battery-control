@@ -39,6 +39,14 @@
                     "acq_cost_override_value": "Acquisition Cost Override Value ($/kWh)"
                 }
             },
+            "cost_tracking": {
+                "title": "Cost Tracking Details (Optional)",
+                "description": "OPTIONAL: Extract continuous realtime cumulative costs natively from the grid volume via your retailer. WARNING: These sensors MUST be native Amber Express settled-price entities. Generic predictive pricing models will not map mathematically to past periods.",
+                "data": {
+                    "tracker_import_price": "Amber Express Grid Import Settled Price ($/kWh)",
+                    "tracker_export_price": "Amber Express Grid Export Settled Price ($/kWh)"
+                }
+            },
             "control": {
                 "title": "Control Services (Optional)",
                 "description": "Map the entities used to control the Powerwall. Leave blank for debug/observation mode.",
@@ -63,6 +71,7 @@
                 "menu_options": {
                     "manual": "Telemetry (Power Sensors)",
                     "energy": "Energy & Metrics",
+                    "cost_tracking": "Cost Tracking Details",
                     "control": "Control Services"
                 }
             },
@@ -102,6 +111,14 @@
                     "solcast_tomorrow_entity": "Solcast Forecast Tomorrow (sensor)",
                     "acq_cost_override": "Override Acquisition Cost (one-shot)",
                     "acq_cost_override_value": "Acquisition Cost Override Value ($/kWh)"
+                }
+            },
+            "cost_tracking": {
+                "title": "Cost Tracking Details (Optional)",
+                "description": "OPTIONAL: Extract continuous realtime cumulative costs natively from the grid volume via your retailer. WARNING: These sensors MUST be native Amber Express settled-price entities. Generic predictive pricing models will not map mathematically to past periods.",
+                "data": {
+                    "tracker_import_price": "Amber Express Grid Import Settled Price ($/kWh)",
+                    "tracker_export_price": "Amber Express Grid Export Settled Price ($/kWh)"
                 }
             },
             "control": {
