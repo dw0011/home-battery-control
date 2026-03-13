@@ -98,6 +98,7 @@ class LinearBatteryController:
         c[0..N-1]   battery charge       bounds: [0, charge_limit_kwh]
         dh[0..N-1]  discharge to home    bounds: [-max_home_kwh, 0]
         dg[0..N-1]  discharge to grid    bounds: [-max_grid_kwh, 0]
+        s[0..N-1]   forced solar export  bounds: [0, ∞)   (Feature 032)
         b[0..N]     battery state        bounds: [safe_lb, capacity]
     """
 
@@ -134,8 +135,9 @@ class LinearBatteryController:
         c_off = number_step
         dh_off = 2 * number_step
         dg_off = 3 * number_step
-        b_off = 4 * number_step
-        num_vars = 4 * number_step + (number_step + 1)
+        s_off = 4 * number_step       # Feature 032: forced solar export (spill)
+        b_off = 5 * number_step
+        num_vars = 5 * number_step + (number_step + 1)
 
         # --- Objective function (§7 of system requirements) ---
         obj = np.zeros(num_vars)
@@ -168,6 +170,14 @@ class LinearBatteryController:
             max_grid = max(0.0, dis_limit - max_home)
             bounds[dg_off + i] = (-max_grid, 0.0)
 
+            # Forced solar export / spill (s) — Feature 032 FR-007
+            # Costed at export price so the LP sees the penalty of a full
+            # battery during negative-export-price solar periods.
+            # Upper bound = physical solar excess (can't spill more than PV-Load).
+            obj[s_off + i] = price_sell[i]
+            max_spill = max(0.0, pv_forecast[i] - load_forecast[i])
+            bounds[s_off + i] = (0.0, max_spill)
+
         # Battery state bounds with dynamic feasibility gradient — §8
         # Terminal valuation — §9: computed from raw acquisition_cost
         median_buy = statistics.median(price_buy) if price_buy else acquisition_cost
@@ -185,17 +195,26 @@ class LinearBatteryController:
             safe_lb = min(reserve_kwh, physically_accessible)
             bounds[b_off + i] = (safe_lb, capacity)
 
-        # --- Inequality constraints: grid balance ---
-        # g[i] - c[i] - dh[i] - dg[i] >= energy[i]
-        # Rewrite: -g[i] + c[i] + dh[i] + dg[i] <= -energy[i]
-        a_ub = np.zeros((number_step, num_vars))
-        b_ub = np.zeros(number_step)
+        # --- Inequality constraints ---
+        # Row 0..N-1: grid balance  g[i] - c[i] - dh[i] - dg[i] >= energy[i]
+        #   Rewrite: -g[i] + c[i] + dh[i] + dg[i] <= -energy[i]
+        # Row N..2N-1: spill floor  s[i] >= -energy[i] - c[i]   (Feature 032)
+        #   Rewrite: -s[i] - c[i] <= energy[i]
+        n_ub = 2 * number_step
+        a_ub = np.zeros((n_ub, num_vars))
+        b_ub = np.zeros(n_ub)
         for i in range(number_step):
+            # Grid balance row
             a_ub[i, g_off + i] = -1.0
             a_ub[i, c_off + i] = 1.0
             a_ub[i, dh_off + i] = 1.0
             a_ub[i, dg_off + i] = 1.0
             b_ub[i] = -energy[i]
+
+            # Spill floor row — FR-008
+            a_ub[number_step + i, s_off + i] = -1.0
+            a_ub[number_step + i, c_off + i] = -1.0
+            b_ub[number_step + i] = energy[i]
 
         # --- Equality constraints: battery dynamics ---
         # b[0] = current
@@ -239,6 +258,23 @@ class LinearBatteryController:
             step_g = res.x[g_off + i]
             step_dh = abs(res.x[dh_off + i])
             step_dg = abs(res.x[dg_off + i])
+
+            # --- SoC-cap plan guard — FR-001/FR-002 (Feature 032) ---
+            # Clamp charge to available battery headroom so the plan never
+            # shows phantom CHARGE_GRID at 100 % SoC.
+            headroom = capacity - step_b          # kWh left before full
+            if headroom <= 0:
+                # FR-001: battery full — zero out charge & matching grid import
+                charge_reduction = step_c
+                step_c = 0.0
+                step_g = max(0.0, step_g - charge_reduction)
+            else:
+                max_charge = headroom / eta_in     # pre-efficiency clamp (Q1)
+                if step_c > max_charge:
+                    # FR-002: nearly full — clamp to headroom
+                    charge_reduction = step_c - max_charge
+                    step_c = max_charge
+                    step_g = max(0.0, step_g - charge_reduction)
 
             # --- Acquisition cost tracking — §12 (uses raw unclamped prices) ---
             if step_c > 0.001:

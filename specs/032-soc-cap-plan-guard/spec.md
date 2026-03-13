@@ -32,7 +32,13 @@ The grid balance constraint `g[i] - c[i] - dh[i] - dg[i] >= energy[i]` is trivia
 - The cumulative cost forecast diverges from reality because it accounts for energy flows that cannot physically occur
 - User trust in the forecast is undermined
 
-## 2. User Scenarios & Acceptance Criteria
+## 2. Clarifications
+### Session 2026-03-12
+- Q: Should the headroom clamp account for charging efficiency (eta_in=0.95) when clamping step_c? → A: Option A — Clamp `step_c` to `headroom / eta_in` so the battery receives exactly `headroom` kWh after efficiency losses. This is physically correct.
+- Q: Should the spill variable interact with no-import periods, or apply uniformly? → A: Option A — Spill is a pure physical model. It applies uniformly to all steps regardless of no-import scheduling.
+- Q: Should the guard override the immediate executor action (step 0), or only the forecast display? → A: Option A — Guard overrides both the forecast plan and the immediate executor action. Charging a full battery is physically nonsensical.
+
+## 3. User Scenarios & Acceptance Criteria
 
 ### Scenario 1: Battery Full During Negative Import Prices
 **Given** the battery SoC is at 100% in the forecast  
@@ -79,10 +85,10 @@ The grid balance constraint `g[i] - c[i] - dh[i] - dg[i] >= energy[i]` is trivia
 ### Part A: Plan Builder Guard (No LP Changes)
 
 ### FR-001: SoC Headroom Gate
-Before computing Net Grid and state classification for each forecast step, the plan builder must calculate the available battery headroom: `headroom = capacity - b[i]`. If `headroom <= 0`, the charge variable (`step_c`) must be clamped to zero.
+Before computing Net Grid and state classification for each forecast step, the plan builder must calculate the available battery headroom: `headroom = capacity - b[i]`. If `headroom <= 0`, the charge variable (`step_c`) must be clamped to zero. The clamp threshold must account for charging efficiency: `max_charge = headroom / eta_in`.
 
 ### FR-002: Charge Clamping to Headroom
-If `0 < headroom < step_c`, the charge variable must be clamped to `headroom` (not zero). Only the physically achievable portion of the charge is reflected in the forecast.
+If `0 < headroom < step_c * eta_in`, the charge variable must be clamped to `headroom / eta_in` (not zero). This ensures the battery receives exactly `headroom` kWh after efficiency losses. Only the physically achievable portion of the charge is reflected in the forecast.
 
 ### FR-003: Grid Import Adjustment
 When charge is clamped (FR-001 or FR-002), the grid import variable (`step_g`) must be reduced by the same amount as the charge reduction. Grid import exists only to serve load deficit and battery charging; if charging is reduced, the corresponding grid import is no longer needed.

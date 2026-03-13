@@ -613,3 +613,56 @@ class TestStateAgreement:
             assert result.limit_kw == 0.0, (
                 f"SC must have limit_kw=0, got {result.limit_kw}"
             )
+
+class TestBug034Regression:
+    """
+    Regression test using real API data from bug #034 (2026-03-08 dump).
+    Scenario: The battery reaches exactly 100% capacity due to high solar output,
+    but previously generated phantom CHARGE_GRID actions and high Net Imports.
+    We run through the entire 24hr snapshot and ensure that if the battery is at
+    capacity, net grid doesn't exceed 0 when solar > load, and state is not CHARGE_GRID.
+    """
+    def test_run_bug034_fixture(self):
+        import json
+        import os
+
+        from custom_components.house_battery_control.fsm.lin_fsm import LinearBatteryController
+
+        fixture_path = os.path.join(os.path.dirname(__file__), "fixtures", "solver_replay_20260308_bug034.json")
+        with open(fixture_path) as f:
+            d = json.load(f)
+
+        num_steps = len(d['rates'])
+        import_price = [r['import_price'] for r in d['rates']]
+        export_price = [r['export_price'] for r in d['rates']]
+
+        # ETA out must be provided to LinearBatteryController as eta_out in the old signature or it's inferred
+        # The correct param list is capacity, charge_rate_max, inverter_limit. Default etas are fine.
+        controller = LinearBatteryController(
+             capacity=d['capacity'],
+             charge_rate_max=d['charge_rate_max'],
+             inverter_limit=d['inverter_limit']
+        )
+
+        # Act
+        plan, net_grid, energy, obj_val = controller.propose_state_of_charge(
+            soc_initial=d['soc'],
+            pv=d['pv_kw'],
+            load=d['load_kw'],
+            price_buy=import_price,
+            price_sell=export_price,
+            n_steps=num_steps,
+            duration_hrs=5.0/60.0
+        )
+
+        assert plan is not None, "Solver failed"
+        assert len(plan) == num_steps
+
+        # Check for the specific bug: At or near 100% SoC with PV > Load,
+        # the net_grid shouldn't be positive (we shouldn't be pulling from grid when full and sunny).
+        for i in range(num_steps):
+            if plan[i] >= d['capacity'] - 0.01:
+                if d['pv_kw'][i] > d['load_kw'][i]:
+                    assert net_grid[i] <= 0.1, (
+                        f"Phantom import at step {i}: SoC={plan[i]:.2f}, net={net_grid[i]:.2f}, PV={d['pv_kw'][i]}, Load={d['load_kw'][i]}"
+                    )

@@ -1,10 +1,10 @@
 {
-    "name": "House Battery Control",
-    "render_readme": true,
-    "domains": [
-        "sensor"
-    ],
-    "iot_class": "local_polling",
-    "homeassistant": "2024.1.0",
-    "version": "1.5.7b7"
+  "name": "House Battery Control",
+  "render_readme": true,
+  "domains": [
+    "sensor"
+  ],
+  "iot_class": "local_polling",
+  "homeassistant": "2024.1.0",
+  "version": "1.5.7b8"
 }
