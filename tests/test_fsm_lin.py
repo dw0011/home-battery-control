@@ -636,27 +636,34 @@ class TestBug034Regression:
         import_price = [r['import_price'] for r in d['rates']]
         export_price = [r['export_price'] for r in d['rates']]
 
-        # ETA out must be provided to LinearBatteryController as eta_out in the old signature or it's inferred
-        # The correct param list is capacity, charge_rate_max, inverter_limit. Default etas are fine.
-        controller = LinearBatteryController(
-             capacity=d['capacity'],
-             charge_rate_max=d['charge_rate_max'],
-             inverter_limit=d['inverter_limit']
+        from custom_components.house_battery_control.fsm.lin_fsm import FakeBattery
+
+        battery = FakeBattery(
+            capacity=d['capacity'],
+            current_charge=d['soc'] / 100.0,  # soc is percentage (0-100)
+            charge_limit=d['charge_rate_max'],
+            discharge_limit=d['inverter_limit'],
+            charging_efficiency=0.96,
+            discharging_efficiency=0.96,
         )
+
+        controller = LinearBatteryController()
+        controller.step = num_steps
 
         # Act
-        plan, net_grid, energy, obj_val = controller.propose_state_of_charge(
-            soc_initial=d['soc'],
-            pv=d['pv_kw'],
-            load=d['load_kw'],
+        b_1, obj_val, sequence = controller.propose_state_of_charge(
+            battery=battery,
+            pv_forecast=d['pv_kw'],
+            load_forecast=d['load_kw'],
             price_buy=import_price,
-            price_sell=export_price,
-            n_steps=num_steps,
-            duration_hrs=5.0/60.0
+            price_sell=export_price
         )
 
-        assert plan is not None, "Solver failed"
-        assert len(plan) == num_steps
+        assert sequence is not None, "Solver failed"
+        assert len(sequence) == num_steps
+
+        plan = [s["target_soc"]/100.0 * d['capacity'] for s in sequence]
+        net_grid = [s["net_grid"] for s in sequence]
 
         # Check for the specific bug: At or near 100% SoC with PV > Load,
         # the net_grid shouldn't be positive (we shouldn't be pulling from grid when full and sunny).
@@ -666,3 +673,62 @@ class TestBug034Regression:
                     assert net_grid[i] <= 0.1, (
                         f"Phantom import at step {i}: SoC={plan[i]:.2f}, net={net_grid[i]:.2f}, PV={d['pv_kw'][i]}, Load={d['load_kw'][i]}"
                     )
+
+
+class TestSpillVariablePenalty:
+    """
+    Test that the solver avoids charging from grid when charging from excess solar
+    is required to avoid negative export prices later. (Feature 035 FR-001)
+    """
+    def test_spill_variable_penalises_negative_export(self):
+        from custom_components.house_battery_control.fsm.lin_fsm import LinearBatteryController
+
+        # 3 periods:
+        # P0: cheap grid import (normal solver would fill up battery here)
+        # P1: moderate grid, no solar
+        # P2: huge solar, huge negative export penalising excess spill
+
+        # LP expects energy per step (kWh per 5 min).
+        # We want equivalent of: P0: 1kW load, P1: 1kW load, P2: 10kW solar, 0.5kW load
+        solar_forecast = [0.0/12, 0.0/12, 10.0/12]
+        load_forecast =  [1.0/12, 1.0/12,  0.5/12]
+        price_buy =      [0.20, 0.20, 0.20]
+        price_sell =     [0.05, 0.05,-0.10] # P2 heavily punishes export
+
+        controller = LinearBatteryController()
+
+        # 13kWh battery, initially 12.0kWh (nearly full).
+        # We need 2kWh to survive P0 and P1.
+        # But P2 has 9.5kWh of excess solar! If we fill the battery with cheap P0 power,
+        # we'll be forced to export 9.5kWh at -0.10 = .95 penalty.
+        # It's much cheaper to naturally discharge in P0/P1 to make room for P2.
+
+        from custom_components.house_battery_control.fsm.lin_fsm import FakeBattery
+
+        battery = FakeBattery(
+            capacity=20.0,
+            current_charge=12.0 / 20.0,
+            charge_limit=120.0, # 120kW allows 10kWh in 5 minutes
+            discharge_limit=120.0,
+            charging_efficiency=1.0, # 100% efficient for test simplicity
+            discharging_efficiency=1.0,
+        )
+
+        controller.step = 3
+
+        b_1, obj_val, sequence = controller.propose_state_of_charge(
+            battery=battery,
+            price_buy=price_buy,
+            price_sell=price_sell,
+            load_forecast=load_forecast,
+            pv_forecast=solar_forecast
+        )
+
+        assert sequence is not None
+        assert len(sequence) == 3
+
+        # To avoid the $0.95 penalty in P2, it should NOT charge in P0.
+        # In fact it should discharge so it can soak up the P2 solar.
+        # P0 net_grid should be <= 0 (no grid import)
+        assert sequence[0]["net_grid"] <= 0.0, "LP charged from grid early despite upcoming heavy solar spill penalty"
+

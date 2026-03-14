@@ -171,10 +171,11 @@ class LinearBatteryController:
             bounds[dg_off + i] = (-max_grid, 0.0)
 
             # Forced solar export / spill (s) — Feature 032 FR-007
-            # Costed at export price so the LP sees the penalty of a full
-            # battery during negative-export-price solar periods.
-            # Upper bound = physical solar excess (can't spill more than PV-Load).
-            obj[s_off + i] = price_sell[i]
+            # Costed mathematically to penalize negative-export-price solar periods.
+            # Feature 035: Negative export prices (e.g. -0.05) must translate to a
+            # positive penalty (+0.05) to avoid mathematically rewarding the LP for spilling.
+            # Positive export prices naturally cost 0 here (opportunity cost handled by c).
+            obj[s_off + i] = max(0.0, -price_sell[i])
             max_spill = max(0.0, pv_forecast[i] - load_forecast[i])
             bounds[s_off + i] = (0.0, max_spill)
 
