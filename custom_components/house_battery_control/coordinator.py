@@ -91,6 +91,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
         self.telemetry_tracker = telemetry_tracker
         self._update_count = 0
         self.dp_target_soc = None
+        self.manual_override: str = "auto"
 
         self.acquisition_cost: float = 0.10
         self.store = Store(hass, 1, "house_battery_control.cost_data")
@@ -742,6 +743,12 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 # Config flags for dashboard visibility
                 "no_import_periods": self.config.get(CONF_NO_IMPORT_PERIODS, ""),
                 "observation_mode": self.config.get(CONF_OBSERVATION_MODE, False),
+                # Manual override state
+                "manual_override": self.manual_override,
+                "script_charge": self.config.get(CONF_SCRIPT_CHARGE),
+                "script_discharge": self.config.get(CONF_SCRIPT_DISCHARGE),
+                "script_charge_stop": self.config.get(CONF_SCRIPT_CHARGE_STOP),
+                "script_discharge_stop": self.config.get(CONF_SCRIPT_DISCHARGE_STOP),
                 # FSM results
                 "state": fsm_result.state,
                 "reason": fsm_result.reason,
