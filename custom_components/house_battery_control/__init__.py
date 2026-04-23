@@ -19,6 +19,7 @@ from .web import (
     HBCConfigYamlView,
     HBCDashboardView,
     HBCLoadHistoryView,
+    HBCOverrideView,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,6 +69,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.http.register_view(HBCApiPingView())
     hass.http.register_view(HBCConfigYamlView())
     hass.http.register_view(HBCLoadHistoryView())
+    hass.http.register_view(HBCOverrideView())
 
     # HTML views
     hass.http.register_view(HBCDashboardView())
@@ -92,7 +94,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             config={
                 "_panel_custom": {
                     "name": "hbc-panel",
-                    "module_url": "/hbc/frontend/hbc-panel.js?v=55",
+                    "module_url": "/hbc/frontend/hbc-panel.js?v=59",
                 }
             },
         )
