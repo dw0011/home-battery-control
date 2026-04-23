@@ -15,7 +15,13 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import callback
 
-from .const import DOMAIN
+from .const import (
+    CONF_SCRIPT_CHARGE,
+    CONF_SCRIPT_CHARGE_STOP,
+    CONF_SCRIPT_DISCHARGE,
+    CONF_SCRIPT_DISCHARGE_STOP,
+    DOMAIN,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -222,6 +228,67 @@ class HBCConfigYamlView(HomeAssistantView):
 
         yaml_text = yaml.dump(config_data, default_flow_style=False, sort_keys=True)
         return web.Response(text=yaml_text, content_type="text/yaml")
+
+
+class HBCOverrideView(HomeAssistantView):
+    """Manual override API: pause/resume HBC and call Powerwall scripts."""
+
+    url = "/hbc/api/override"
+    name = "hbc:api:override"
+    requires_auth = True
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass = request.app["hass"]
+        try:
+            body = await request.json()
+        except Exception:
+            return self.json({"error": "invalid JSON"}, status_code=400)
+
+        mode = body.get("mode", "auto")
+        if mode not in {"auto", "charge", "discharge", "self_powered"}:
+            return self.json({"error": f"invalid mode: {mode}"}, status_code=400)
+
+        # Find coordinator
+        domain_data = hass.data.get(DOMAIN, {})
+        coordinator = None
+        for entry_data in domain_data.values():
+            coordinator = entry_data.get("coordinator")
+            if coordinator:
+                break
+
+        if not coordinator:
+            return self.json({"error": "coordinator not found"}, status_code=503)
+
+        if mode == "auto":
+            coordinator.manual_override = "auto"
+            coordinator.config["observation_mode"] = False
+            _LOGGER.info("HBC Override: cleared, returning to auto mode")
+        else:
+            coordinator.manual_override = mode
+            coordinator.config["observation_mode"] = True
+
+            script_map = {
+                "charge": coordinator.config.get(CONF_SCRIPT_CHARGE),
+                "discharge": coordinator.config.get(CONF_SCRIPT_DISCHARGE),
+                "self_powered": (
+                    coordinator.config.get(CONF_SCRIPT_CHARGE_STOP)
+                    or coordinator.config.get(CONF_SCRIPT_DISCHARGE_STOP)
+                ),
+            }
+            script_entity = script_map.get(mode)
+            if script_entity:
+                await hass.services.async_call(
+                    "script", "turn_on", {"entity_id": script_entity}
+                )
+                _LOGGER.info("HBC Override: mode=%s, called %s", mode, script_entity)
+            else:
+                _LOGGER.warning("HBC Override: no script configured for mode=%s", mode)
+
+        return self.json({
+            "ok": True,
+            "manual_override": coordinator.manual_override,
+            "observation_mode": coordinator.config.get("observation_mode", False),
+        })
 
 
 class HBCLoadHistoryView(HomeAssistantView):
