@@ -370,6 +370,7 @@ class HBCPanel extends LitElement {
   // ── Dashboard Tab ──────────────────────────────────────
   _renderDashboard() {
     const d = this._data;
+    const socSensorOk = d.soc_sensor_ok !== false; // default true if not yet populated
     const soc = d.soc !== undefined ? d.soc : 0;
     const solar = d.solar_power !== undefined ? d.solar_power : 0;
     const grid = d.grid_power !== undefined ? d.grid_power : 0;
@@ -387,6 +388,12 @@ class HBCPanel extends LitElement {
     const summaryStats = this._calculateSummaryStats();
 
     return html`
+      ${!socSensorOk ? html`
+        <div class="sensor-warning">
+          ⚠️ Battery SoC sensor offline — Powerwall commands are suppressed until the sensor recovers.
+          ${d.soc !== undefined ? html`Displaying last known SoC: <strong>${d.soc}%</strong>` : ''}
+        </div>
+      ` : ''}
       <div class="card">
         <h2>Power Flow</h2>
         <div class="flow-grid">
@@ -1118,6 +1125,18 @@ class HBCPanel extends LitElement {
         margin: -8px 0 10px;
         font-size: 11px;
         color: #666688;
+      }
+
+      /* Sensor Warning Banner */
+      .sensor-warning {
+        background: linear-gradient(135deg, #7a4500, #5a3000);
+        border: 1px solid #ff8c00;
+        border-radius: 10px;
+        padding: 14px 18px;
+        margin-bottom: 16px;
+        color: #ffcc80;
+        font-size: 0.9em;
+        line-height: 1.5;
       }
 
       /* Manual Override Card */

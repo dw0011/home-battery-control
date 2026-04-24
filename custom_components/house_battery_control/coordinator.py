@@ -92,6 +92,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
         self._update_count = 0
         self.dp_target_soc = None
         self.manual_override: str = "auto"
+        self._last_known_soc: float | None = None
 
         self.acquisition_cost: float = 0.10
         self.store = Store(hass, 1, "house_battery_control.cost_data")
@@ -513,7 +514,29 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("Weather plugin not ready on boot: %s", e)
 
             # Fetch Current Telemetry with Inversion Logic
-            soc = self._get_sensor_value(self.config.get(CONF_BATTERY_SOC_ENTITY, ""))
+            # --- Battery SoC: use last known value if sensor is temporarily offline ---
+            soc_entity = self.config.get(CONF_BATTERY_SOC_ENTITY, "")
+            soc_state = self.hass.states.get(soc_entity)
+            soc_sensor_ok = (
+                soc_state is not None
+                and soc_state.state not in ("unavailable", "unknown")
+            )
+            if soc_sensor_ok:
+                soc = self._get_sensor_value(soc_entity)
+                self._last_known_soc = soc
+            elif self._last_known_soc is not None:
+                soc = self._last_known_soc
+                _LOGGER.warning(
+                    "Battery SoC sensor '%s' unavailable — using last known value: %.1f%%",
+                    soc_entity, soc,
+                )
+            else:
+                soc = 0.0
+                _LOGGER.error(
+                    "Battery SoC sensor '%s' unavailable with no prior reading — "
+                    "Powerwall commands will be suppressed this cycle",
+                    soc_entity,
+                )
 
             raw_battery_p = self._get_sensor_value(self.config.get(CONF_BATTERY_POWER_ENTITY, ""))
             battery_p = raw_battery_p * (
@@ -677,8 +700,13 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 self._state_transitions.appendleft(snapshot)
             self._previous_state = fsm_result.state
 
-            # Apply state to Powerwall
-            await self.executor.apply_state(fsm_result.state, fsm_result.limit_kw)
+            # Apply state to Powerwall — suppressed if SoC sensor offline with no fallback
+            if self._last_known_soc is not None:
+                await self.executor.apply_state(fsm_result.state, fsm_result.limit_kw)
+            else:
+                _LOGGER.warning(
+                    "Powerwall commands suppressed — SoC sensor offline with no prior reading"
+                )
 
             # Store native DP target SOC state
             self.dp_target_soc = getattr(fsm_result, "target_soc", None)
@@ -743,6 +771,8 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 # Config flags for dashboard visibility
                 "no_import_periods": self.config.get(CONF_NO_IMPORT_PERIODS, ""),
                 "observation_mode": self.config.get(CONF_OBSERVATION_MODE, False),
+                # Sensor health
+                "soc_sensor_ok": soc_sensor_ok,
                 # Manual override state
                 "manual_override": self.manual_override,
                 "script_charge": self.config.get(CONF_SCRIPT_CHARGE),
