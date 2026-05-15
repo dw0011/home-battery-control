@@ -327,11 +327,12 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 price = future_plan[idx].get("import_price", price)
                 export_price = future_plan[idx].get("export_price", export_price)
 
-                # Use the FSM's computationally precise Net Grid value natively without overriding it.
+                # Prices are in c/kWh throughout the rates system; divide by 100
+                # to produce interval costs in $ for display.
                 if net_grid_kw > 0:
-                    interval_cost = net_grid_kw * duration_hours * price
+                    interval_cost = net_grid_kw * duration_hours * price / 100.0
                 else:
-                    interval_cost = net_grid_kw * duration_hours * export_price
+                    interval_cost = net_grid_kw * duration_hours * export_price / 100.0
 
             else:
                 state = "SELF_CONSUMPTION"
@@ -356,14 +357,20 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 # Grid Impact = Load - PV + Battery Charge
                 interval_kwh = load_kwh - pv_kwh + battery_kwh
                 net_grid_kw = interval_kwh / duration_hours if duration_hours > 0 else 0.0
+                # Prices in c/kWh → divide by 100 for $ output
                 if interval_kwh < 0:
-                    interval_cost = interval_kwh * export_price
+                    interval_cost = interval_kwh * export_price / 100.0
                 else:
-                    interval_cost = interval_kwh * price
+                    interval_cost = interval_kwh * price / 100.0
 
             limit_pct = 100.0 if state != "SELF_CONSUMPTION" else 0.0
 
-            cumulative = cum_cost if 'cum_cost' in locals() else cumulative + interval_cost
+            # cum_cost from the LP solver is also in cents (solver receives c/kWh prices);
+            # divide by 100 so the cumulative column stays in $.
+            if 'cum_cost' in locals() and cum_cost != 0.0:
+                cumulative = cum_cost / 100.0
+            else:
+                cumulative = cumulative + interval_cost
 
             table.append(
                 {
