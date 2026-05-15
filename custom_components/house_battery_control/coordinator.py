@@ -393,10 +393,10 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     if idx < len(load_forecast) and isinstance(load_forecast[idx], dict)
                     else "0.00",
                     "SoC Forecast": f"{target_soc:.1f}%",
-                    "Interval Cost": f"${interval_cost:.4f}",
-                    "Cumul. Cost": f"${cumulative:.4f}",
+                    "Interval Cost": f"${interval_cost:.2f}",
+                    "Cumul. Cost": f"${cumulative:.2f}",
                     "cumulative_cost": cumulative,
-                    "Acq. Cost": f"{acq_cost:.4f}",
+                    "Acq. Cost": f"{acq_cost:.2f}",
                 }
             )
 
