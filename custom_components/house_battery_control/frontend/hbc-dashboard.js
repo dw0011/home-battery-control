@@ -8,12 +8,63 @@ export class HBCDashboard extends LitElement {
   static get properties() {
     return {
       data: { type: Object },
+      hass: { type: Object },
+      _overrideLoading: { type: Boolean },
+      _resetConfirm: { type: Boolean },
+      _resetLoading: { type: Boolean },
     };
   }
 
   constructor() {
     super();
     this.data = {};
+    this._overrideLoading = false;
+    this._resetConfirm = false;
+    this._resetLoading = false;
+  }
+
+  async _setOverride(mode) {
+    if (!this.hass) return;
+    this._overrideLoading = true;
+    try {
+      const resp = await this.hass.fetchWithAuth("/hbc/api/override", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        console.error("Override failed:", err);
+      }
+    } catch (e) {
+      console.error("Override error:", e);
+    }
+    this._overrideLoading = false;
+  }
+
+  async _resetCost() {
+    if (!this._resetConfirm) {
+      // First click: show confirmation state
+      this._resetConfirm = true;
+      // Auto-cancel after 5s if user doesn't confirm
+      setTimeout(() => { this._resetConfirm = false; }, 5000);
+      return;
+    }
+    // Second click: confirmed — do the reset
+    this._resetConfirm = false;
+    this._resetLoading = true;
+    try {
+      const resp = await this.hass.fetchWithAuth("/hbc/api/reset-cost", {
+        method: "POST",
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        console.error("Reset cost failed:", err);
+      }
+    } catch (e) {
+      console.error("Reset cost error:", e);
+    }
+    this._resetLoading = false;
   }
 
   _calculateSummaryStats() {
@@ -58,6 +109,57 @@ export class HBCDashboard extends LitElement {
     }
   }
 
+  _renderOverrideCard() {
+    const override = this.data.manual_override || "auto";
+    const isOverride = override !== "auto";
+    const loading = this._overrideLoading;
+
+    const buttons = [
+      { mode: "charge",       label: "Grid Charge",    icon: "⚡" },
+      { mode: "discharge",    label: "Force Export",   icon: "📤" },
+      { mode: "self_powered", label: "Self-Powered",   icon: "🔋" },
+      { mode: "auto",         label: "Resume Auto",    icon: "🔄" },
+    ];
+
+    return html`
+      <div class="card">
+        <h2>Manual Override
+          ${isOverride ? html`<span class="override-badge">${override.replace("_", " ").toUpperCase()}</span>` : ""}
+        </h2>
+        ${isOverride ? html`
+          <div class="override-note">
+            ⚠️ Observation mode active — scheduler paused until "Resume Auto".
+          </div>
+        ` : ""}
+        <div class="override-buttons">
+          ${buttons.map(b => html`
+            <button
+              class="override-btn ${override === b.mode ? "override-active" : ""}"
+              ?disabled=${loading}
+              @click=${() => this._setOverride(b.mode)}
+            >
+              <span>${b.icon}</span>
+              <span>${b.label}</span>
+            </button>
+          `)}
+        </div>
+        <div class="reset-cost-row">
+          <button
+            class="reset-cost-btn ${this._resetConfirm ? "reset-confirm" : ""}"
+            ?disabled=${this._resetLoading}
+            @click=${() => this._resetCost()}
+          >
+            ${this._resetLoading
+              ? "Resetting…"
+              : this._resetConfirm
+              ? "⚠️ Confirm reset to $0.00?"
+              : "🗑 Reset Cumulative Cost"}
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
   render() {
     const d = this.data;
     const soc = d.soc !== undefined ? d.soc : 0;
@@ -77,6 +179,12 @@ export class HBCDashboard extends LitElement {
     const summaryStats = this._calculateSummaryStats();
 
     return html`
+      ${d.soc_sensor_ok === false ? html`
+        <div class="sensor-warning">
+          ⚠️ SoC sensor unavailable — battery state data may be stale or missing.
+        </div>
+      ` : ""}
+
       <div class="card">
         <h2>Power Flow</h2>
         <div class="flow-grid">
@@ -107,6 +215,9 @@ export class HBCDashboard extends LitElement {
           </div>
         </div>
       </div>
+
+      ${this._renderOverrideCard()}
+
       <div class="card">
         <div class="status-grid">
           <div class="stat">
@@ -133,10 +244,10 @@ export class HBCDashboard extends LitElement {
       </div>
       ${(noImportPeriods || observationMode) ? html`
       <div class="constraints-bar">
-        ${observationMode ? html`<span class="constraint-badge observation">👁 Observation Mode</span>` : ''}
-        ${noImportPeriods ? html`<span class="constraint-badge no-import">🚫 No-Import: ${noImportPeriods}</span>` : ''}
+        ${observationMode ? html`<span class="constraint-badge observation">👁 Observation Mode</span>` : ""}
+        ${noImportPeriods ? html`<span class="constraint-badge no-import">🚫 No-Import: ${noImportPeriods}</span>` : ""}
       </div>
-      ` : ''}
+      ` : ""}
       <div class="card">
         <h2>24-Hour Forecast Summary</h2>
         <div class="status-grid">
@@ -188,8 +299,22 @@ export class HBCDashboard extends LitElement {
         font-size: 18px;
         font-weight: 500;
         user-select: none;
+        display: flex;
+        align-items: center;
+        gap: 10px;
       }
-      
+
+      /* SoC sensor warning */
+      .sensor-warning {
+        background: #3e2a00;
+        color: #ffaa00;
+        border: 1px solid #cc8800;
+        border-radius: 10px;
+        padding: 12px 16px;
+        margin-bottom: 16px;
+        font-size: 14px;
+      }
+
       /* Power Flow Grid */
       .flow-grid {
         display: grid;
@@ -226,6 +351,102 @@ export class HBCDashboard extends LitElement {
       }
       .battery-item .flow-value {
         color: #00ff88;
+      }
+
+      /* Override card */
+      .override-badge {
+        font-size: 12px;
+        font-weight: 700;
+        padding: 3px 10px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #ff8c00, #cc6600);
+        color: #fff;
+        letter-spacing: 0.05em;
+      }
+      .override-note {
+        background: #3e2600;
+        color: #ffaa00;
+        border: 1px solid #cc6600;
+        border-radius: 8px;
+        padding: 10px 14px;
+        margin-bottom: 14px;
+        font-size: 13px;
+      }
+      .override-buttons {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .override-btn {
+        flex: 1;
+        min-width: 110px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        padding: 14px 10px;
+        background: #12122a;
+        border: 1px solid #2a2a5e;
+        border-radius: 10px;
+        color: #8888aa;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .override-btn span:first-child {
+        font-size: 22px;
+      }
+      .override-btn:hover:not(:disabled) {
+        border-color: #00d4ff;
+        color: #e0e0e0;
+        background: #1e1e4a;
+      }
+      .override-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .override-btn.override-active {
+        background: linear-gradient(135deg, #00d4ff22, #0088cc22);
+        border-color: #00d4ff;
+        color: #00d4ff;
+        font-weight: 600;
+      }
+
+      /* Reset cost */
+      .reset-cost-row {
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid #2a2a5e;
+      }
+      .reset-cost-btn {
+        background: transparent;
+        color: #666688;
+        border: 1px solid #333355;
+        border-radius: 8px;
+        padding: 8px 16px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: all 0.2s;
+        width: 100%;
+      }
+      .reset-cost-btn:hover:not(:disabled) {
+        border-color: #ff6b6b;
+        color: #ff6b6b;
+      }
+      .reset-cost-btn.reset-confirm {
+        background: rgba(255, 107, 107, 0.15);
+        border-color: #ff6b6b;
+        color: #ff6b6b;
+        font-weight: 600;
+        animation: pulse 0.8s ease-in-out infinite alternate;
+      }
+      .reset-cost-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      @keyframes pulse {
+        from { opacity: 0.7; }
+        to   { opacity: 1.0; }
       }
 
       /* Status Grid */

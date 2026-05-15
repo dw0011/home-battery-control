@@ -83,14 +83,14 @@ export class HBCPlanTable extends LitElement {
     const histStart = this.data.load_history_start;
     const histEnd = this.data.load_history_end;
     const ttlMin = this.data.load_cache_ttl_minutes;
-    if (!cacheDate || !refreshedAt) return "Load history: fetching\u2026";
+    if (!cacheDate || !refreshedAt) return "Load history: fetching…";
     const t = new Date(refreshedAt);
     const timeStr = t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     const startDate = histStart ? new Date(histStart).toLocaleDateString() : "?";
     const endDate = histEnd ? new Date(histEnd).toLocaleDateString() : "?";
     const expiry = new Date(t.getTime() + (ttlMin || 360) * 60000);
     const expiryStr = expiry.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    return `Load cache: ${startDate} \u2192 ${endDate} (refreshed ${timeStr}, expires ${expiryStr})`;
+    return `Load cache: ${startDate} → ${endDate} (refreshed ${timeStr}, expires ${expiryStr})`;
   }
 
   render() {
@@ -101,25 +101,22 @@ export class HBCPlanTable extends LitElement {
     }
 
     const cols = [
-      "Time", "Local Time", "Import", "Export", "State", "Limit", 
-      "Net Grid", "PV", "Load", "Temp", "Temp Δ", "Load Adj.", 
+      "Time", "Local Time", "Import", "Export", "State", "Limit",
+      "Net Grid", "PV", "Load", "Temp", "Temp Δ", "Load Adj.",
       "SoC", "Cost", "Cumul. Cost", "Acq. Cost",
     ];
 
     const parseNum = (str) => parseFloat(String(str).replace(/[^0-9.-]+/g, "")) || 0;
 
     const formatCostStr = (valStr) => {
-      if (valStr === undefined || valStr === null) return "$0.00.0";
+      if (valStr === undefined || valStr === null) return "$0.00";
       const num = typeof valStr === "number" ? valStr : parseNum(valStr);
-      if (isNaN(num)) return "$0.00.0";
-      if (num === 0) return "$0.00.0";
+      if (isNaN(num)) return "$0.00";
+      if (num === 0) return "$0.00";
       const abs = Math.abs(num);
       const sign = num < 0 ? "-$" : "$";
       let str;
-      if (abs < 10) {
-        const base = abs.toFixed(3);
-        str = base.slice(0, 4) + "." + base.slice(4);
-      }
+      if (abs < 10) str = abs.toFixed(3);
       else if (abs < 100) str = abs.toFixed(2);
       else if (abs < 1000) str = abs.toFixed(1);
       else str = abs.toFixed(0);
@@ -129,26 +126,25 @@ export class HBCPlanTable extends LitElement {
     let rows = [];
 
     if (this._planResolution === "5min") {
-      rows = plan.map((r) => {
-        return {
-          time: r["Time"] || "—",
-          localTime: r["Local Time"] || "—",
-          imp: r["Import Rate"] || "0.0",
-          exp: r["Export Rate"] || "0.0",
-          state: r["FSM State"] || "—",
-          limit: r["Inverter Limit"] || "0%",
-          grid: r["Net Grid"] || "0.00",
-          pv: r["PV Forecast"] || "0.00",
-          ld: r["Load Forecast"] || "0.00",
-          temp: r["Air Temp Forecast"] || "—",
-          tempDelta: r["Temp Delta"] || "—",
-          loadAdj: r["Load Adj."] || "0.00",
-          soc: r["SoC Forecast"] || "—",
-          cost: formatCostStr(r["Interval Cost"]),
-          cumul: formatCostStr(r["Cumul. Cost"]),
-          acq: formatCostStr(r["Acq. Cost"]),
-        };
-      });
+      rows = plan.map((r) => ({
+        time: r["Time"] || "—",
+        localTime: r["Local Time"] || "—",
+        synthetic: r["Synthetic"] || false,
+        imp: r["Import Rate"] || "0.0",
+        exp: r["Export Rate"] || "0.0",
+        state: r["FSM State"] || "—",
+        limit: r["Inverter Limit"] || "0%",
+        grid: r["Net Grid"] || "0.00",
+        pv: r["PV Forecast"] || "0.00",
+        ld: r["Load Forecast"] || "0.00",
+        temp: r["Air Temp Forecast"] || "—",
+        tempDelta: r["Temp Delta"] || "—",
+        loadAdj: r["Load Adj."] || "0.00",
+        soc: r["SoC Forecast"] || "—",
+        cost: formatCostStr(r["Interval Cost"]),
+        cumul: formatCostStr(r["Cumul. Cost"]),
+        acq: formatCostStr(r["Acq. Cost"]),
+      }));
     } else {
       let currentChunk = [];
       for (let i = 0; i < plan.length; i++) {
@@ -167,7 +163,7 @@ export class HBCPlanTable extends LitElement {
           const time = chunk[0]["Time"] || "—";
           const localTime = chunk[0]["Local Time"] || "—";
 
-           let state = "SELF_CONSUMPTION";
+          let state = "SELF_CONSUMPTION";
           let limit = "0%";
           const chargeReq = chunk.find(row => row["FSM State"] === "CHARGE_GRID");
           const dischargeReq = chunk.find(row => row["FSM State"] === "DISCHARGE_GRID");
@@ -198,8 +194,9 @@ export class HBCPlanTable extends LitElement {
           const tempDeltaNum = (chunk.reduce((s, row) => s + parseNum(row["Temp Delta"]), 0) / chunk.length).toFixed(1);
           const tempDelta = chunk[0]["Temp Delta"] === "—" ? "—" : `${tempDeltaNum}°C`;
           const loadAdj = (chunk.reduce((s, row) => s + parseNum(row["Load Adj."]), 0) / chunk.length).toFixed(2);
+          const synthetic = chunk[0]["Synthetic"] || false;
 
-           rows.push({ time, localTime, imp, exp, state, limit, grid, pv, ld, temp, tempDelta, loadAdj, soc, cost, cumul, acq });
+          rows.push({ time, localTime, synthetic, imp, exp, state, limit, grid, pv, ld, temp, tempDelta, loadAdj, soc, cost, cumul, acq });
         }
       }
     }
@@ -207,26 +204,30 @@ export class HBCPlanTable extends LitElement {
     const summaryStats = this._calculateSummaryStats();
     const footerKeys = {
       "Time": "24h Summary:", "Local Time": "", "Import": summaryStats.avgImport, "Export": summaryStats.avgExport,
-      "State": "", "Limit": "", "Net Grid": "", "PV": summaryStats.totalPV + " kwh", "Load": summaryStats.totalLoad + " kwh",
+      "State": "", "Limit": "", "Net Grid": "", "PV": summaryStats.totalPV + " kWh", "Load": summaryStats.totalLoad + " kWh",
       "Temp": "", "Temp Δ": "", "Load Adj.": "", "SoC": "", "Cost": "", "Cumul. Cost": "", "Acq. Cost": "",
     };
 
     return html`
       <div class="card table-card">
         <div class="header" style="margin-bottom: 12px;">
-          <h2 style="margin-bottom: 0;">24-Hour Plan <span style="font-size: 0.55em; font-weight: normal; opacity: 0.5; margin-left: 12px;">Updated: ${this._formatLastUpdate()}</span></h2>
+          <h2 style="margin-bottom: 0;">
+            24-Hour Plan
+            <span style="font-size: 0.55em; font-weight: normal; opacity: 0.5; margin-left: 12px;">
+              Updated: ${this._formatLastUpdate()}
+            </span>
+          </h2>
           <div style="font-size: 0.75em; opacity: 0.5; margin-top: 2px;">${this._renderCacheStatus()}</div>
           <div class="tabs">
             <button class="${this._planResolution === "5min" ? "active" : ""}" @click=${() => this._switchResolution("5min")}>5 Min</button>
             <button class="${this._planResolution === "30min" ? "active" : ""}" @click=${() => this._switchResolution("30min")}>30 Min</button>
           </div>
         </div>
-        
+
         <div class="column-toggles">
           ${cols.map(c => html`
             <button
-              class="${this._hiddenCols.includes(c) ? '' : 'active'}"
-              style="background: ${this._hiddenCols.includes(c) ? 'transparent' : 'var(--primary-color)'}; color: ${this._hiddenCols.includes(c) ? 'inherit' : 'var(--text-primary-color, white)'}; border: 1px solid ${this._hiddenCols.includes(c) ? 'var(--divider-color, rgba(150,150,150,0.4))' : 'var(--primary-color)'}; border-radius: 4px; padding: 4px 8px; font-size: 0.8em; cursor: pointer; opacity: ${this._hiddenCols.includes(c) ? '0.5' : '1'}; transition: 0.2s ease;"
+              class="col-toggle ${this._hiddenCols.includes(c) ? "" : "col-active"}"
               @click=${() => this._toggleCol(c)}
             >${c}</button>
           `)}
@@ -240,24 +241,33 @@ export class HBCPlanTable extends LitElement {
             <tbody>
               ${rows.map((r) => {
                 const colKeys = {
-                  "Time": r.time, "Local Time": r.localTime, "Import": r.imp, "Export": r.exp,
+                  "Time": r.time,
+                  "Local Time": r.synthetic && r.localTime !== "—" ? `${r.localTime}*` : r.localTime,
+                  "Import": r.imp, "Export": r.exp,
                   "State": r.state, "Limit": r.limit, "Net Grid": r.grid, "PV": r.pv, "Load": r.ld,
                   "Temp": r.temp, "Temp Δ": r.tempDelta, "Load Adj.": r.loadAdj, "SoC": r.soc,
                   "Cost": r.cost, "Cumul. Cost": r.cumul, "Acq. Cost": r.acq,
                 };
                 return html`
-                  <tr class="${r.state === 'SELF_CONSUMPTION' ? 'state-self' : r.state === 'CHARGE_GRID' ? 'state-charge' : r.state === 'DISCHARGE_GRID' ? 'state-discharge' : ''}">
+                  <tr class="${
+                    r.state === "SELF_CONSUMPTION" ? "state-self" :
+                    r.state === "CHARGE_GRID" ? "state-charge" :
+                    r.state === "DISCHARGE_GRID" ? "state-discharge" : ""
+                  } ${r.synthetic ? "state-synthetic" : ""}">
                     ${cols.filter(c => !this._hiddenCols.includes(c)).map(c => html`<td>${colKeys[c]}</td>`)}
                   </tr>
                 `;
               })}
             </tbody>
             <tfoot>
-              <tr style="font-weight: bold; background: rgba(255,255,255,0.05);">
+              <tr class="footer-row">
                 ${cols.filter(c => !this._hiddenCols.includes(c)).map(c => html`<td>${footerKeys[c] || ""}</td>`)}
               </tr>
             </tfoot>
           </table>
+        </div>
+        <div class="synthetic-legend">
+          * Synthetic Forecast Period (Historical Analog Fallback)
         </div>
       </div>
     `;
@@ -282,7 +292,7 @@ export class HBCPlanTable extends LitElement {
         margin: 0 0 16px;
         font-size: 18px;
         font-weight: 500;
-        user-select: none; /* Spec 4.3 */
+        user-select: none;
       }
       .tabs {
         display: flex;
@@ -315,9 +325,26 @@ export class HBCPlanTable extends LitElement {
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
-        padding: 0 16px 12px 16px;
-        border-bottom: 1px solid rgba(255,255,255,0.1);
+        padding: 0 0 12px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         margin-bottom: 12px;
+      }
+      .col-toggle {
+        background: transparent;
+        color: #666688;
+        border: 1px solid #333355;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 0.8em;
+        cursor: pointer;
+        opacity: 0.6;
+        transition: all 0.2s;
+      }
+      .col-toggle.col-active {
+        background: #00d4ff22;
+        color: #00d4ff;
+        border-color: #00d4ff66;
+        opacity: 1;
       }
       .table-card {
         overflow: hidden;
@@ -347,16 +374,35 @@ export class HBCPlanTable extends LitElement {
         background: #15153a;
       }
       tr.state-self {
-        background-color: rgba(0, 212, 255, 0.15) !important;
+        background-color: rgba(0, 212, 255, 0.10) !important;
       }
       tr.state-charge {
-        background-color: rgba(0, 255, 136, 0.15) !important;
+        background-color: rgba(0, 255, 136, 0.12) !important;
       }
       tr.state-discharge {
-        background-color: rgba(255, 107, 107, 0.15) !important;
+        background-color: rgba(255, 107, 107, 0.12) !important;
       }
-      .meta {
-        color: #e0e0e0;
+      tr.state-synthetic td {
+        font-style: italic;
+        opacity: 0.75;
+      }
+      tr.state-synthetic td:first-child::after {
+        content: " *";
+        color: #8888aa;
+        font-size: 0.85em;
+      }
+      .footer-row {
+        font-weight: bold;
+        background: rgba(255, 255, 255, 0.05) !important;
+      }
+      .footer-row td {
+        border-top: 1px solid #2a2a5e;
+      }
+      .synthetic-legend {
+        font-size: 0.8em;
+        opacity: 0.6;
+        margin-top: 12px;
+        font-style: italic;
       }
     `;
   }

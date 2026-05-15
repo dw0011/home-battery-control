@@ -341,7 +341,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                 pv_kw_avg = 0.0
                 load_kw_avg = 0.0
                 acq_cost = 0.0
-                cum_cost = cumulative
+                cum_cost = None  # No LP data — use interval_cost fallback (avoids /100 cascade)
 
                 # --- 6. Fallback Battery Physics ---
                 soc_delta = target_soc - simulated_soc
@@ -365,9 +365,12 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
 
             limit_pct = 100.0 if state != "SELF_CONSUMPTION" else 0.0
 
-            # cum_cost from the LP solver is also in cents (solver receives c/kWh prices);
-            # divide by 100 so the cumulative column stays in $.
-            if 'cum_cost' in locals() and cum_cost != 0.0:
+            # cum_cost from the LP solver is in cents (c/kWh prices × kWh).
+            # Divide by 100 to convert to $ for display.
+            # None signals "no LP data for this row" — fall through to interval_cost accumulation.
+            # 0.0 is a valid LP value (zero net cost, e.g. idle night period) — also fall through
+            # so the coordinator's running dollar total carries forward unchanged.
+            if cum_cost is not None and cum_cost != 0.0:
                 cumulative = cum_cost / 100.0
             else:
                 cumulative = cumulative + interval_cost

@@ -249,7 +249,10 @@ class LinearBatteryController:
         # --- Build 288-step future plan sequence ---
         running_capacity = battery.current_charge
         running_cost = acquisition_cost
-        running_cum_cost = cumulative_cost
+        # cumulative_cost arrives in $ from telemetry; scale to cents so units
+        # are consistent with the per-step additions (net_grid_kwh × c/kWh = cents).
+        # The coordinator divides the result by 100 to display in $.
+        running_cum_cost = cumulative_cost * 100.0
         soc_correction = 0.0  # BUG-025B: accumulate energy retained by gate
         sequence = []
 

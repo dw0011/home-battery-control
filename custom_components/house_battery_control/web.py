@@ -291,6 +291,45 @@ class HBCOverrideView(HomeAssistantView):
         })
 
 
+class HBCResetCostView(HomeAssistantView):
+    """Reset the telemetry cumulative cost tracker back to $0."""
+
+    url = "/hbc/api/reset-cost"
+    name = "hbc:api:reset-cost"
+    requires_auth = True
+
+    async def post(self, request: web.Request) -> web.Response:
+        hass = request.app["hass"]
+
+        domain_data = hass.data.get(DOMAIN, {})
+        tracker = None
+        for entry_data in domain_data.values():
+            tracker = entry_data.get("tracker")
+            if tracker:
+                break
+
+        if not tracker:
+            return self.json({"error": "tracker not found"}, status_code=503)
+
+        old_value = tracker.cumulative_cost
+        tracker.cumulative_cost = 0.0
+        # Reset kWh baselines so the next tick doesn't produce a huge delta
+        tracker._last_import = None
+        tracker._last_export = None
+
+        # Persist immediately
+        await tracker._store.async_save({
+            "cumulative_cost": 0.0,
+            "last_import": None,
+            "last_export": None,
+            "last_price_import": tracker._last_price_import,
+            "last_price_export": tracker._last_price_export,
+        })
+
+        _LOGGER.info("HBC: cumulative cost reset from $%.2f to $0.00", old_value)
+        return self.json({"ok": True, "previous_value": round(old_value, 2)})
+
+
 class HBCLoadHistoryView(HomeAssistantView):
     """JSON API: detailed load history (Phase 16)."""
 

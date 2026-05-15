@@ -29,14 +29,14 @@ export class HBCSensors extends LitElement {
 
     return html`
       <div class="card">
-        <h2 
-          @click=${this._toggleSensors} 
+        <h2
+          @click=${this._toggleSensors}
           style="cursor: pointer; display: flex; justify-content: space-between; align-items: center;"
         >
           Sensor Status
           <span style="font-size: 0.8em; transform: rotate(${this._sensorsHidden ? '-90deg' : '0deg'}); transition: transform 0.2s;">▼</span>
         </h2>
-        
+
         ${this._sensorsHidden ? html`` : html`
         <table>
           <thead><tr><th>Entity</th><th>State</th><th>Status</th></tr></thead>
