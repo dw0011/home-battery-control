@@ -61,6 +61,7 @@ from .const import (
     CONF_TRACKER_EXPORT_PRICE,
     CONF_TRACKER_IMPORT_PRICE,
     CONF_USE_AMBER_EXPRESS,
+    CONF_USE_FLOW_POWER,
     CONF_WEATHER_ENTITY,
     DEFAULT_BATTERY_CAPACITY,
     DEFAULT_BATTERY_RATE_MAX,
@@ -71,6 +72,7 @@ from .const import (
     DEFAULT_SOLCAST_TODAY,
     DEFAULT_SOLCAST_TOMORROW,
     DEFAULT_USE_AMBER_EXPRESS,
+    DEFAULT_USE_FLOW_POWER,
     DOMAIN,
 )
 
@@ -218,6 +220,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     vol.Required(CONF_EXPORT_PRICE_ENTITY): EntitySelector(
                         EntitySelectorConfig(domain="sensor")
                     ),
+                    vol.Optional(CONF_USE_FLOW_POWER, default=DEFAULT_USE_FLOW_POWER): BooleanSelector(),
                     vol.Optional(CONF_USE_AMBER_EXPRESS, default=DEFAULT_USE_AMBER_EXPRESS): BooleanSelector(),
                     vol.Optional(CONF_CURRENT_IMPORT_PRICE_ENTITY): EntitySelector(
                         EntitySelectorConfig(domain="sensor")
@@ -468,6 +471,9 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Required(
                         CONF_EXPORT_PRICE_ENTITY, default=self._data.get(CONF_EXPORT_PRICE_ENTITY)
                     ): EntitySelector(EntitySelectorConfig(domain="sensor")),
+                    vol.Optional(
+                        CONF_USE_FLOW_POWER, default=self._data.get(CONF_USE_FLOW_POWER, DEFAULT_USE_FLOW_POWER)
+                    ): BooleanSelector(),
                     vol.Optional(
                         CONF_USE_AMBER_EXPRESS, default=self._data.get(CONF_USE_AMBER_EXPRESS, DEFAULT_USE_AMBER_EXPRESS)
                     ): BooleanSelector(),

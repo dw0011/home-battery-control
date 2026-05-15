@@ -17,7 +17,7 @@ class RateInterval(TypedDict):
 
 
 class RatesManager:
-    """Manages fetching and processing tariff rates from Amber Electric."""
+    """Manages fetching and processing tariff rates from Amber Electric or Flow Power."""
 
     def __init__(
         self,
@@ -25,16 +25,21 @@ class RatesManager:
         import_entity_id: str,
         export_entity_id: str,
         use_amber_express: bool = False,
+        use_flow_power: bool = False,
     ):
         self._hass = hass
         self._import_entity_id = import_entity_id
         self._export_entity_id = export_entity_id
         self._use_amber_express = use_amber_express
+        self._use_flow_power = use_flow_power
         self._rates: List[RateInterval] = []
 
     def update(self) -> None:
         """Fetch latest rates from both import and export sensors."""
-        if self._use_amber_express:
+        if self._use_flow_power:
+            import_rates = self._parse_flow_power_entity(self._import_entity_id, "import")
+            export_rates = self._parse_flow_power_entity(self._export_entity_id, "export")
+        elif self._use_amber_express:
             import_rates = self._parse_amber_express_entity(self._import_entity_id, "import")
             export_rates = self._parse_amber_express_entity(self._export_entity_id, "export")
         else:
@@ -198,6 +203,86 @@ class RatesManager:
                 continue
 
         parsed.sort(key=lambda x: x["start"])
+        return parsed
+
+    def _parse_flow_power_entity(self, entity_id: str, label: str) -> list:
+        """Parse rate intervals from a Flow Power HA sensor.
+
+        Flow Power sensors expose:
+        - state: current live price in $/kWh
+        - forecast_dict attribute: dict of "YYYY-MM-DD HH:MM:SS+HHMM" -> $/kWh
+          in 30-minute steps (happy-hour export rates already baked in)
+
+        Prices are converted from $/kWh to c/kWh (* 100).
+        Each 30-min interval is chunked into 5-min sub-intervals.
+        A synthetic "now -> first forecast" interval is prepended using the live price.
+        """
+        state = self._hass.states.get(entity_id)
+        if not state:
+            _LOGGER.warning(f"Flow Power {label} price entity {entity_id} not found")
+            return []
+
+        if state.state in ("unavailable", "unknown"):
+            _LOGGER.warning(f"Flow Power {label} entity {entity_id} is {state.state}")
+            return []
+
+        # Current live price from sensor state ($/kWh -> c/kWh)
+        try:
+            current_price_cents = float(state.state) * 100.0
+        except (ValueError, TypeError):
+            current_price_cents = 0.0
+
+        forecast_dict = state.attributes.get("forecast_dict", {})
+        if not forecast_dict:
+            _LOGGER.warning(f"No forecast_dict in Flow Power {label} entity {entity_id}")
+            return []
+
+        # Parse each timestamp -> price pair
+        intervals: list[tuple[datetime, float]] = []
+        for ts_str, price_dollars in forecast_dict.items():
+            try:
+                ts = dt_util.parse_datetime(str(ts_str))
+                if ts:
+                    ts = dt_util.as_utc(ts)
+                    intervals.append((ts, float(price_dollars) * 100.0))
+            except (ValueError, TypeError) as e:
+                _LOGGER.debug(f"Could not parse Flow Power timestamp '{ts_str}': {e}")
+                continue
+
+        intervals.sort(key=lambda x: x[0])
+
+        if not intervals:
+            _LOGGER.warning(f"Flow Power {label} entity {entity_id} has no parseable forecast entries")
+            return []
+
+        # Prepend live-price interval from now until the first forecast slot
+        now = dt_util.utcnow()
+        first_ts = intervals[0][0]
+        if now < first_ts:
+            intervals.insert(0, (now, current_price_cents))
+
+        # Build 5-minute sub-intervals from each 30-min forecast slot
+        chunk_duration = timedelta(minutes=5)
+        parsed = []
+
+        for i, (start_ts, price) in enumerate(intervals):
+            end_ts = intervals[i + 1][0] if i + 1 < len(intervals) else start_ts + timedelta(minutes=30)
+
+            current_ts = start_ts
+            while current_ts < end_ts:
+                next_ts = min(current_ts + chunk_duration, end_ts)
+                parsed.append(
+                    {
+                        "start": current_ts,
+                        "end": next_ts,
+                        "price": round(price, 4),
+                        "type": "FORECAST",
+                    }
+                )
+                current_ts = next_ts
+
+        parsed.sort(key=lambda x: x["start"])
+        _LOGGER.debug(f"Flow Power {label}: parsed {len(parsed)} 5-min intervals from {len(intervals)} forecast slots")
         return parsed
 
     def get_rates(self) -> List[RateInterval]:

@@ -46,6 +46,7 @@ from .const import (
     CONF_SOLCAST_TODAY_ENTITY,
     CONF_SOLCAST_TOMORROW_ENTITY,
     CONF_USE_AMBER_EXPRESS,
+    CONF_USE_FLOW_POWER,
     CONF_WEATHER_ENTITY,
     DEFAULT_LOAD_CACHE_TTL,
     DEFAULT_SCAN_INTERVAL,
@@ -114,6 +115,7 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
             config.get(CONF_IMPORT_PRICE_ENTITY, ""),
             config.get(CONF_EXPORT_PRICE_ENTITY, ""),
             use_amber_express=config.get(CONF_USE_AMBER_EXPRESS, False),
+            use_flow_power=config.get(CONF_USE_FLOW_POWER, False),
         )
         self.weather = WeatherManager(hass, config.get(CONF_WEATHER_ENTITY, ""))
         self.load_predictor = LoadPredictor(hass)
