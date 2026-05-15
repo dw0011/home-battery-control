@@ -255,11 +255,21 @@ class RatesManager:
             _LOGGER.warning(f"Flow Power {label} entity {entity_id} has no parseable forecast entries")
             return []
 
-        # Prepend live-price interval from now until the first forecast slot
+        # Build the working interval list:
+        # Always prepend a "now -> next 30-min boundary" interval using the live sensor price.
+        # This handles both cases:
+        #   a) now < first_ts  (update arrived early — gap before first forecast slot)
+        #   b) now >= first_ts (normal case — current slot has already started)
+        # In both cases the current slot price is the live 5-min dispatch price, which is
+        # more accurate than the 30-min TWAP forecast stored in forecast_dict.
+        # Flow Power sensor state is in $/kWh; current_price_cents is already × 100.
         now = dt_util.utcnow()
-        first_ts = intervals[0][0]
-        if now < first_ts:
-            intervals.insert(0, (now, current_price_cents))
+        future_intervals = [(ts, price) for ts, price in intervals if ts > now]
+        if future_intervals:
+            intervals = [(now, current_price_cents)] + future_intervals
+        else:
+            # All forecast slots are in the past; just use live price for the next 30 min
+            intervals = [(now, current_price_cents)]
 
         # Build 5-minute sub-intervals from each 30-min forecast slot
         chunk_duration = timedelta(minutes=5)

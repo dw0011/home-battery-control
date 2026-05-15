@@ -625,13 +625,26 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                     load_forecast.append({"kw": 0.0})
 
                 # Build FSM context and run decision logic
-            current_import_entity = self.config.get(CONF_CURRENT_IMPORT_PRICE_ENTITY)
+            # Flow Power sensors report in $/kWh, not c/kWh, so the
+            # CONF_CURRENT_*_PRICE_ENTITY override would produce the wrong unit.
+            # With Flow Power the live price is already embedded as the first
+            # interval in the rates list (prepended in _parse_flow_power_entity),
+            # so we always derive current_price from the rates manager directly.
+            _use_flow_power = self.config.get(CONF_USE_FLOW_POWER, False)
+
+            current_import_entity = (
+                None if _use_flow_power
+                else self.config.get(CONF_CURRENT_IMPORT_PRICE_ENTITY)
+            )
             if current_import_entity:
                 current_price = self._get_sensor_value(current_import_entity)
             else:
                 current_price = self.rates.get_import_price_at(dt_util.now())
 
-            current_export_entity = self.config.get(CONF_CURRENT_EXPORT_PRICE_ENTITY)
+            current_export_entity = (
+                None if _use_flow_power
+                else self.config.get(CONF_CURRENT_EXPORT_PRICE_ENTITY)
+            )
             if current_export_entity:
                 current_export_price = self._get_sensor_value(current_export_entity)
             else:
