@@ -149,7 +149,10 @@ class LinearBatteryController:
             # Grid import (g): raw price, no-import periods, negative price cap
             obj[g_off + i] = price_buy[i]
             if i in _blocked:
-                bounds[g_off + i] = (0.0, 0.0)
+                # Allow grid import up to load deficit only (no battery charging from grid).
+                # Using max(0, energy[i]) rather than hard zero keeps the LP feasible
+                # when all forecast prices exceed the max_import_price threshold.
+                bounds[g_off + i] = (0.0, max(0.0, energy[i]))
             elif price_buy[i] < 0:
                 bounds[g_off + i] = (0.0, load_forecast[i] + charge_limit)
             else:
@@ -186,15 +189,32 @@ class LinearBatteryController:
         terminal_valuation = max(acquisition_cost, blended)
 
         reserve_kwh = capacity * (reserve_soc / 100.0)
+        # When below reserve, track only unblocked steps toward reachability.
+        # Blocked steps can't grid-charge, so counting them overstates how fast
+        # the battery can recover — leading to LP infeasibility.
+        _available_charge_steps = 0
         for i in range(number_step + 1):
             if i == number_step:
                 # Terminal valuation — §9 (prevents full discharge)
                 obj[b_off + i] = -max(0.001, terminal_valuation)
             else:
                 obj[b_off + i] = 0.0
-            physically_accessible = current + i * charge_limit * eta_in
-            safe_lb = min(reserve_kwh, physically_accessible)
+
+            if current < reserve_kwh:
+                # Below reserve: gradient uses only unblocked steps so the bound
+                # never exceeds what the LP can actually achieve via grid charging.
+                # Reserve enforces normally once enough unblocked steps have passed.
+                reachable = current + _available_charge_steps * charge_limit * eta_in
+                safe_lb = min(reserve_kwh, max(reachable, current))
+            else:
+                physically_accessible = current + i * charge_limit * eta_in
+                safe_lb = min(reserve_kwh, physically_accessible)
+
             bounds[b_off + i] = (safe_lb, capacity)
+
+            # Step i contributes charging capacity to b[i+1] onwards
+            if i < number_step and i not in _blocked:
+                _available_charge_steps += 1
 
         # --- Inequality constraints ---
         # Row 0..N-1: grid balance  g[i] - c[i] - dh[i] - dg[i] >= energy[i]

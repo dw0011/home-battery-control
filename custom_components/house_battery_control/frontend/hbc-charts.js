@@ -46,20 +46,35 @@ export class HBCCharts extends LitElement {
       return isNaN(f) ? 0 : f;
     };
 
-    let autoMin = Infinity;
-    let autoMax = -Infinity;
+    // Collect all values across all series for percentile-based scaling
+    const allValues = [];
     rows.forEach(row => {
       series.forEach(s => {
         const v = parseNum(row[s.key]);
-        if (v < autoMin) autoMin = v;
-        if (v > autoMax) autoMax = v;
+        allValues.push(v);
       });
     });
-    if (autoMin === Infinity) { autoMin = 0; autoMax = 1; }
+
+    let autoMin = allValues.length ? Math.min(...allValues) : 0;
+    let autoMax = allValues.length ? Math.max(...allValues) : 1;
     if (autoMin === autoMax) { autoMin -= 1; autoMax += 1; }
 
+    // Use 95th-percentile cap when yMax is not explicitly set.
+    // This prevents a single extreme spike (e.g. Amber spot price event)
+    // from squashing the rest of the chart into an unreadable flat line.
+    let pctMax = autoMax;
+    if (yMax === undefined && allValues.length > 1) {
+      const sorted = [...allValues].sort((a, b) => a - b);
+      const p95idx = Math.floor(sorted.length * 0.95);
+      const p95 = sorted[p95idx];
+      // Only cap if the true max is more than 3x the 95th percentile (real outlier)
+      if (autoMax > p95 * 3 && p95 > 0) {
+        pctMax = Math.ceil(p95 * 1.2);
+      }
+    }
+
     const dataMin = yMin !== undefined ? yMin : Math.floor(autoMin - Math.abs(autoMin) * 0.05);
-    const dataMax = yMax !== undefined ? yMax : Math.ceil(autoMax + Math.abs(autoMax) * 0.05);
+    const dataMax = yMax !== undefined ? yMax : Math.ceil(pctMax + Math.abs(pctMax) * 0.05);
     const range = dataMax - dataMin || 1;
 
     const xOf = (i) => PAD_LEFT + (i / Math.max(n - 1, 1)) * plotW;
@@ -111,7 +126,7 @@ export class HBCCharts extends LitElement {
     const xStep = Math.max(1, Math.floor(n / 8));
     for (let i = 0; i < n; i += xStep) {
       const x = xOf(i).toFixed(1);
-      const t = rows[i]["Time"] || "";
+      const t = rows[i]["Local Time"] || rows[i]["Time"] || "";
       const label = t.length >= 5 ? t.slice(0, 5) : t;
       xLabels += `<text x="${x}" y="${H - PAD_BOT + 14}" fill="#666688" font-size="10" text-anchor="middle">${label}</text>`;
     }

@@ -35,6 +35,7 @@ from .const import (
     CONF_LOAD_SENSITIVITY_HIGH_TEMP,
     CONF_LOAD_SENSITIVITY_LOW_TEMP,
     CONF_LOAD_TODAY_ENTITY,
+    CONF_MAX_IMPORT_PRICE,
     CONF_NO_IMPORT_PERIODS,
     CONF_OBSERVATION_MODE,
     CONF_RESERVE_SOC,
@@ -502,6 +503,18 @@ class HBCDataUpdateCoordinator(DataUpdateCoordinator):
                                 if _is_in_no_import_period(local_time, periods):
                                     blocked.add(t)
                 no_import_steps = blocked if blocked else None
+
+        # --- Max import price cap (load-only import — no grid charging above threshold) ---
+        # Adds above-threshold steps to no_import_steps. The LP solver interprets these
+        # with a load-capped bound (0, max(0, energy[i])) rather than a hard zero,
+        # so load can still be served from grid but battery charging from grid is blocked.
+        max_import_price = float(self.config.get(CONF_MAX_IMPORT_PRICE, 0.0) or 0.0)
+        if max_import_price > 0.0:
+            price_blocked: set[int] = set(no_import_steps) if no_import_steps else set()
+            for i in range(n):
+                if price_buy[i] > max_import_price:
+                    price_blocked.add(i)
+            no_import_steps = price_blocked if price_blocked else None
 
         return SolverInputs(
             price_buy=price_buy,

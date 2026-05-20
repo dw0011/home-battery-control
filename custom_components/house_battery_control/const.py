@@ -60,6 +60,10 @@ CONF_ACQ_COST_OVERRIDE_VALUE = "acq_cost_override_value"
 # No-Import Periods (demand charge windows)
 CONF_NO_IMPORT_PERIODS = "no_import_periods"
 
+# Max Import Price — block grid charging above this threshold (c/kWh, 0 = disabled)
+CONF_MAX_IMPORT_PRICE = "max_import_price"
+DEFAULT_MAX_IMPORT_PRICE = 0.0  # 0 = disabled
+
 # Panel
 CONF_PANEL_ADMIN_ONLY = "panel_admin_only"
 

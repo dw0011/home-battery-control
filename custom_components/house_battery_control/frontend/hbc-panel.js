@@ -4,10 +4,10 @@ import {
   css,
 } from "https://unpkg.com/lit-element@2.4.0/lit-element.js?module";
 
-import "./hbc-dashboard.js?v=64";
-import "./hbc-sensors.js?v=64";
-import "./hbc-plan-table.js?v=64";
-import "./hbc-charts.js?v=64";
+import "./hbc-dashboard.js?v=65";
+import "./hbc-sensors.js?v=65";
+import "./hbc-plan-table.js?v=65";
+import "./hbc-charts.js?v=65";
 
 // Module-level recovery: after extended idle, HA may destroy the panel element
 // without recreating it. Detect tab focus and reload if panel is missing.

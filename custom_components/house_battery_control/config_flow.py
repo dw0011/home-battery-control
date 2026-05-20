@@ -47,6 +47,7 @@ from .const import (
     CONF_LOAD_SENSITIVITY_HIGH_TEMP,
     CONF_LOAD_SENSITIVITY_LOW_TEMP,
     CONF_LOAD_TODAY_ENTITY,
+    CONF_MAX_IMPORT_PRICE,
     CONF_NO_IMPORT_PERIODS,
     CONF_OBSERVATION_MODE,
     CONF_PANEL_ADMIN_ONLY,
@@ -67,6 +68,7 @@ from .const import (
     DEFAULT_BATTERY_RATE_MAX,
     DEFAULT_INVERTER_LIMIT,
     DEFAULT_LOAD_CACHE_TTL,
+    DEFAULT_MAX_IMPORT_PRICE,
     DEFAULT_PANEL_ADMIN_ONLY,
     DEFAULT_RESERVE_SOC,
     DEFAULT_SOLCAST_TODAY,
@@ -554,6 +556,10 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
             self._data[CONF_NO_IMPORT_PERIODS] = user_input.pop(
                 CONF_NO_IMPORT_PERIODS, ""
             )
+            # Persist max import price cap (0 = disabled)
+            self._data[CONF_MAX_IMPORT_PRICE] = float(
+                user_input.pop(CONF_MAX_IMPORT_PRICE, DEFAULT_MAX_IMPORT_PRICE) or 0.0
+            )
             # Handle script entities: strip empty values, store the rest
             for key in (
                 CONF_SCRIPT_CHARGE,
@@ -618,6 +624,15 @@ class HBCOptionsFlowHandler(config_entries.OptionsFlow):
                             "suggested_value": self._data.get(CONF_NO_IMPORT_PERIODS, "")
                         },
                     ): TextSelector(TextSelectorConfig(type="text")),
+                    vol.Optional(
+                        CONF_MAX_IMPORT_PRICE,
+                        description={
+                            "suggested_value": self._data.get(CONF_MAX_IMPORT_PRICE, DEFAULT_MAX_IMPORT_PRICE)
+                        },
+                    ): NumberSelector(NumberSelectorConfig(
+                        min=0, max=9999, step=0.5, unit_of_measurement="c/kWh",
+                        mode=NumberSelectorMode.BOX,
+                    )),
                 }
             ),
         )
