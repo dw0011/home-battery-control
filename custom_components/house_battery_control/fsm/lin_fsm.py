@@ -116,6 +116,7 @@ class LinearBatteryController:
         cumulative_cost: float = 0.0,
         reserve_soc: float = 0.0,
         no_import_steps: set[int] | None = None,
+        export_priority_threshold: float = 0.0,
     ):
         number_step = min(288, self.step)
 
@@ -145,25 +146,37 @@ class LinearBatteryController:
         _blocked = no_import_steps or set()
         bounds = [None] * num_vars  # Pre-allocate for indexed assignment
 
+        # Price quantisation — round to nearest 0.5c to prevent the LP chasing
+        # sub-cent differences between forecast blocks that are within forecast
+        # accuracy. Preserves meaningful arbitrage (>=0.5c) while collapsing
+        # near-identical prices so the time-preference tiebreaker acts instead.
+        _QUANT = 0.5
+        q_buy = [round(p / _QUANT) * _QUANT for p in price_buy]
+        q_sell = [round(p / _QUANT) * _QUANT for p in price_sell]
+
         for i in range(number_step):
-            # Grid import (g): raw price, no-import periods, negative price cap
-            obj[g_off + i] = price_buy[i]
+            # Grid import (g): quantised price, no-import periods, negative price cap
+            obj[g_off + i] = q_buy[i]
             if i in _blocked:
                 # Allow grid import up to load deficit only (no battery charging from grid).
                 # Using max(0, energy[i]) rather than hard zero keeps the LP feasible
                 # when all forecast prices exceed the max_import_price threshold.
                 bounds[g_off + i] = (0.0, max(0.0, energy[i]))
-            elif price_buy[i] < 0:
+            elif q_buy[i] < 0:
                 bounds[g_off + i] = (0.0, load_forecast[i] + charge_limit)
             else:
                 bounds[g_off + i] = (0.0, None)
 
-            # Charge (c): opportunity cost + tiebreaker — §7.2
-            obj[c_off + i] = max(0.001, price_sell[i]) + max(0.0, price_buy[i]) / 1000.0
+            # Charge (c): opportunity cost + time-preference tiebreaker — §7.2
+            # Time-preference: 0.02c/step, capped at 0.5c — makes LP prefer charging
+            # sooner over later when quantised prices are equal, without overriding
+            # genuine price differences larger than 0.5c.
+            time_pref = min(i * 0.02, 0.5)
+            obj[c_off + i] = max(0.001, q_sell[i]) + max(0.0, q_buy[i]) / 1000.0 + time_pref
             bounds[c_off + i] = (0.0, charge_limit)
 
             # Discharge to home (dh): opportunity cost = max(ε, sell_price)
-            sell_opp = max(0.001, price_sell[i])
+            sell_opp = max(0.001, q_sell[i])
             obj[dh_off + i] = sell_opp
             max_home = max(0.0, energy[i])
             bounds[dh_off + i] = (-max_home, 0.0)
@@ -178,7 +191,7 @@ class LinearBatteryController:
             # Feature 035: Negative export prices (e.g. -0.05) must translate to a
             # positive penalty (+0.05) to avoid mathematically rewarding the LP for spilling.
             # Positive export prices naturally cost 0 here (opportunity cost handled by c).
-            obj[s_off + i] = max(0.0, -price_sell[i])
+            obj[s_off + i] = max(0.0, -q_sell[i])
             max_spill = max(0.0, pv_forecast[i] - load_forecast[i])
             bounds[s_off + i] = (0.0, max_spill)
 
@@ -335,6 +348,36 @@ class LinearBatteryController:
                 net_grid_kwh = load_forecast[i] - pv_forecast[i] + step_c - step_dh - step_dg
                 net_grid_kw = net_grid_kwh * (60.0 / 5.0)
 
+            # --- Export priority override ---
+            # When export price >= threshold and battery is above reserve,
+            # force DISCHARGE_GRID instead of SELF_CONSUMPTION.
+            # Prevents single-tick blips during high-price export windows and
+            # avoids Powerwall mode-switching chatter. Does not affect import
+            # logic (threshold never reached when export price is 0c).
+            # When already below the configured reserve (overnight depletion), use
+            # current SoC as the effective floor so the override keeps firing
+            # throughout the export session rather than cutting out early.
+            _effective_reserve = min(reserve_kwh, current)
+            if (state == "SELF_CONSUMPTION"
+                    and export_priority_threshold > 0.0
+                    and price_sell[i] >= export_priority_threshold
+                    and step_b > _effective_reserve + 0.01 * capacity):
+                energy_i = load_forecast[i] - pv_forecast[i]
+                max_home_kwh = max(0.0, energy_i)
+                max_grid_kwh = max(0.0, dis_limit - max_home_kwh)
+                # Available kWh to export given effective reserve floor (DC→AC via eta_out)
+                available_dg = max(0.0, step_b - _effective_reserve - 0.01 * capacity) / eta_out
+                forced_dg = min(max_grid_kwh, available_dg)
+                if forced_dg > 0.005:
+                    battery_depletion = forced_dg * eta_out
+                    soc_correction -= battery_depletion
+                    step_dg = forced_dg
+                    step_b = max(_effective_reserve, step_b - battery_depletion)
+                    running_capacity = step_b
+                    state = "DISCHARGE_GRID"
+                    net_grid_kwh = load_forecast[i] - pv_forecast[i] + step_c - step_dh - step_dg
+                    net_grid_kw = net_grid_kwh * (60.0 / 5.0)
+
             # --- Cumulative cost tracking — §3.4 (raw prices, net grid flow) ---
             if net_grid_kwh > 0:
                 running_cum_cost += net_grid_kwh * price_buy[i]
@@ -420,6 +463,7 @@ class LinearBatteryStateMachine(BatteryStateMachine):
                     cumulative_cost=context.cumulative_cost,
                     reserve_soc=float(context.config.get("reserve_soc", 0.0)),
                     no_import_steps=no_import_steps if no_import_steps else None,
+                    export_priority_threshold=float(context.config.get("export_priority_threshold", 0.0)),
                 )
             )
         except Exception as e:

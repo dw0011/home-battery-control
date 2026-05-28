@@ -48,6 +48,12 @@ class PowerwallExecutor:
         self._last_executed_state: str | None = None
         self._last_executed_limit: float = 0.0
         self._apply_count: int = 0
+        # Hysteresis: suppress transient SELF_CONSUMPTION blips immediately after
+        # entering CHARGE_GRID or DISCHARGE_GRID.  Sensor state changes caused by
+        # the Powerwall responding to a command can trigger rapid LP re-evaluations
+        # that briefly produce SELF_CONSUMPTION before settling — this prevents the
+        # resulting stop-start script chatter.
+        self._grace_ticks: int = 0
 
     @property
     def last_state(self) -> str | None:
@@ -80,6 +86,23 @@ class PowerwallExecutor:
             _LOGGER.info(f"Observation mode — suppressing: {state} (limit: {limit_kw:.1f} kW)")
             return
 
+        # Hysteresis: suppress a transient SELF_CONSUMPTION tick immediately after
+        # entering CHARGE_GRID.  Rapid sensor updates from the Powerwall responding
+        # to a command can cause one LP recalculation to land on SELF_CONSUMPTION
+        # before settling — absorb it silently.
+        # NOTE: intentionally not applied to DISCHARGE_GRID — stopping export late
+        # (after the window closes) wastes battery at no revenue.
+        if (state == STATE_SELF_CONSUMPTION
+                and self._last_executed_state == STATE_CHARGE_GRID
+                and self._grace_ticks > 0):
+            self._grace_ticks -= 1
+            _LOGGER.debug(
+                "Hysteresis: holding %s for %d more tick(s) — suppressing transient SELF_CONSUMPTION",
+                self._last_executed_state,
+                self._grace_ticks,
+            )
+            return
+
         # Dedup: only execute if different from last EXECUTED state
         if state == self._last_executed_state and limit_kw == self._last_executed_limit:
             _LOGGER.debug(f"State unchanged ({state}), skipping execute")
@@ -87,6 +110,12 @@ class PowerwallExecutor:
 
         self._apply_count += 1
         _LOGGER.info(f"Applying state: {state} (limit: {limit_kw:.1f} kW)")
+
+        # Set grace window only when entering CHARGE_GRID, clear it otherwise
+        if state == STATE_CHARGE_GRID:
+            self._grace_ticks = 1
+        else:
+            self._grace_ticks = 0
 
         # Execute the actual HA service calls
         await self._async_execute_commands(state, limit_kw)

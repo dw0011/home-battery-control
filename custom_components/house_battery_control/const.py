@@ -64,6 +64,10 @@ CONF_NO_IMPORT_PERIODS = "no_import_periods"
 CONF_MAX_IMPORT_PRICE = "max_import_price"
 DEFAULT_MAX_IMPORT_PRICE = 0.0  # 0 = disabled
 
+# Export Priority Threshold — force continuous discharge when export price >= this (c/kWh, 0 = disabled)
+CONF_EXPORT_PRIORITY_THRESHOLD = "export_priority_threshold"
+DEFAULT_EXPORT_PRIORITY_THRESHOLD = 0.0  # 0 = disabled
+
 # Panel
 CONF_PANEL_ADMIN_ONLY = "panel_admin_only"
 
