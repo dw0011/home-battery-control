@@ -7,11 +7,7 @@
 A deterministic Home Assistant custom integration for optimising Tesla Powerwall battery usage. Uses a Linear Programming solver to minimise daily electricity costs based on real-time Amber Electric spot pricing, Solcast solar forecasts, and historical load patterns.
 
 ## Added Features
-Flow Power Pricing
-Manual Control
-Plan Graphs
-Import Price Limit
-Export Priority Threshold 
+Flow Power Pricing, Manual Control, Plan Graphs, Import Price Limit, Export Priority Threshold .
 
 ## What It Does
 
