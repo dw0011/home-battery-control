@@ -16,6 +16,7 @@ Every 5 minutes, HBC collects your current energy tariffs, solar production fore
 ![24-Hour Plan — the solver's optimal schedule with pricing, state, SoC, and cost projections](docs/images/plan-panel.png)
 
 ![Manual Override Panel](docs/images/manual_override_panel.png)
+![Plan Graph Panels](docs/images/chart_panel_1.png,docs/images/chart_panel_2.png)
 
 ## Prerequisites
 
